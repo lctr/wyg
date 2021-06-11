@@ -24,7 +24,7 @@ export interface ParseError {
 
 export class Parser {
   program: Expr[] = [];
-  expr!: Expr | any;
+  expr!: Expr;
   failed!: boolean;
   errors!: ParseError[];
   private lexer: Lexer;
@@ -37,7 +37,7 @@ export class Parser {
   }
   parse (): Expr[] {
     if (this.eof()) {
-      const expr = this.parseAdditive();
+      const expr = this.parseAdditive<Expr>();
       if (expr) {
         this.expr = expr;
         this.program.push(this.expr);
