@@ -9,6 +9,9 @@ export class Stream {
   peek () {
     return this.source.charAt(this.pos);
   }
+  after () {
+    return this.source.charAt(this.pos + 1);
+  }
   next () {
     const char = this.source.charAt(this.pos++);
     if (char == '\n') this.col = 0, this.line++;
