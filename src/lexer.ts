@@ -2,15 +2,22 @@ import { Stream } from './stream.ts';
 
 // lexeme kinds
 export enum Type {
-  KW, STR, NUM, SYM, OP, PUNCT, EOF
+  KW, BOOL, STR, NUM, SYM, OP, PUNCT, EOF
 }
 
+
 export class Token {
-  constructor (public type: Type, public value: string | number) { }
+  literal: string;
+  constructor (public type: Type, public value: string | number, literal?: string) {
+    if (!literal) this.literal = value + '';
+    else this.literal = literal;
+  }
   toString () {
     return `${ Type[ this.type ] }[ ${ this.value } ]`;
   }
 }
+
+export const EOF = new Token(Type.EOF, '');
 
 /**
  * Generates a stream of tokens from a given string input. Upon completion of stream, all following token value calls will return `null`.
@@ -21,8 +28,8 @@ export class Token {
  */
 export class Lexer {
   stream: Stream;
-  private current!: Token | null;
-  private static readonly keywords = " if then else fn true false ";
+  private current!: Token;
+  private static readonly keywords = " let if then else true false ";
   constructor (source: string | Stream) {
     if (source instanceof Stream) this.stream = source;
     else this.stream = new Stream(source);
@@ -31,50 +38,53 @@ export class Lexer {
   error (message: string) {
     this.stream.error(message);
   }
-  // for non-blocking errors to be used by parser(s)
+  peek () {
+    return this.current || (this.current = this.peekNext());
+  }
+  next () {
+    const token = this.current;
+    this.current = EOF;
+    return token?.type !== Type.EOF ? token : this.peekNext();
+  }
+  eof () {
+    return this.current.type === Type.EOF;
+  }
   get pos () {
     const { pos: start, line, col } = this.stream;
     return { start, line, col };
   }
-  peek () {
-    return this.current || (this.current = this.peekNext());
-  }
-  peekNext (): Token | null {
+  peekNext (): Token {
     this.eatWhile(Lexer.isSpace);
 
-    if (this.stream.eof()) return null;
+    if (this.stream.eof()) return EOF;
 
     const char = this.stream.peek();
 
     switch (true) {
-      case (char == '~'):
+      case Lexer.isComment(char, this.stream.after()):
         this.skipComment();
         return this.peekNext();
+      
       case (char == '"'):
         return this.eatString();
+      
       case Lexer.isDigit(char):
         return this.eatNumber();
+      
       case Lexer.isWordStart(char):
         return this.eatWord();
+      
       case Lexer.isPunct(char):
         return this.eatPunct();
+      
       case Lexer.isOperator(char):
         return this.eatOperator();
+      
       default:
-        this.error("Unable to tokenize " + char);
+        throw this.error("Unable to tokenize " + char);
     }
-
-    // for type-checking purposes, TODO: look at later
-    return new Token(Type.EOF, "\0");
   }
-  next () {
-    const token = this.current;
-    this.current = null;
-    return token || this.peekNext();
-  }
-  eof () {
-    return this.current == null;
-  }
+  
   // consumption methods
   private eatNumber () {
     let infixed = false;
@@ -87,17 +97,30 @@ export class Lexer {
       }
       return Lexer.isDigit(c);
     });
-    return new Token(Type.NUM, parseFloat(number));
+    return new Token(Type.NUM, parseFloat(number), number);
   }
   private eatString () {
-    return new Token(Type.STR, this.eatEscaped('"'));
+    const string = this.eatEscaped('"');
+    return new Token(Type.STR, string);
   }
   private eatWord () {
     const word = this.eatWhile(Lexer.isWord);
     return new Token(Lexer.isKeyword(word) ? Type.KW : Type.SYM, word);
   }
   private skipComment () {
-    this.eatWhile((c) => c != '\n');
+    if (this.stream.after() == '~')
+      this.eatWhile((c) => c != '\n');
+    else {
+      let penult = false;
+      this.eatWhile(c => {
+        if (penult)
+          if (c == '~')
+            return false;
+          else penult = false;
+        else if (c == '*') penult = true;
+        return true;
+      });
+    }
     this.stream.next();
   }
   private eatPunct () {
@@ -154,8 +177,11 @@ export class Lexer {
     return Lexer.isWordStart(word) || /[a-z\d]/i.test(word);
   }
   private static isPunct (char: string) {
-    return ",;()[]{}".indexOf(char) > -1;
+    return ",;()[]{}|".indexOf(char) > -1;
+  }
+  private static isComment (left: string, right: string) {
+    return " ~~ ~* ".indexOf(left + right) > -1;
   }
 }
 
-export default { Type, Token, Lexer };
+export default { Type, Token, Lexer, EOF };
