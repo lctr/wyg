@@ -2,22 +2,54 @@ import { Stream } from './stream.ts';
 
 // lexeme kinds
 export enum Type {
-  KW, BOOL, STR, NUM, SYM, OP, PUNCT, EOF
+  KW='kw', BOOL='bool', STR='str', NUM='num', SYM='sym', OP='op', PUNCT='punct', EOF='eof'
 }
 
 
 export class Token {
   literal: string;
-  constructor (public type: Type, public value: string | number, literal?: string) {
+  start: number;
+  end: number;
+  line: number;
+  col: number;
+  constructor (
+    lexer: Lexer | null,
+    public type: Type,
+    public value: string | number,
+    literal?: string
+  ) {
     if (!literal) this.literal = value + '';
     else this.literal = literal;
+    if (!lexer) {
+      this.line = -1;
+      this.col = -1;
+      this.start = -1;
+      this.end = -1;
+    }
+    else {
+      const { start, line, col } = lexer.pos();
+      this.line = line;
+      this.col = col;
+      this.start = start;
+      this.end = start + this.literal.length;
+    }
+  }
+  typeIs (t: string | Type) {
+    return (this.type === t);
+  }
+  validate (type: Type, ...literal: string[]) {
+    if (type !== this.type) return false;
+    for (const val of literal) {
+      if (val === this.literal) return true;
+    }
+    return false;
   }
   toString () {
-    return `${ Type[ this.type ] }[ ${ this.value } ]`;
+    return `${ this.type } :: ${ this.value }`;
   }
 }
 
-export const EOF = new Token(Type.EOF, '');
+export const EOF = new Token(null, Type.EOF, '');
 
 /**
  * Generates a stream of tokens from a given string input. Upon completion of stream, all following token value calls will return `null`.
@@ -28,7 +60,7 @@ export const EOF = new Token(Type.EOF, '');
  */
 export class Lexer {
   stream: Stream;
-  private current!: Token;
+  private current!: Token | null;
   private static readonly keywords = " let if then else true false ";
   constructor (source: string | Stream) {
     if (source instanceof Stream) this.stream = source;
@@ -43,13 +75,13 @@ export class Lexer {
   }
   next () {
     const token = this.current;
-    this.current = EOF;
-    return token?.type !== Type.EOF ? token : this.peekNext();
+    this.current = null;
+    return token || this.peekNext();
   }
   eof () {
-    return this.current.type === Type.EOF;
+    return this.peekNext().type === Type.EOF;
   }
-  get pos () {
+  pos () {
     const { pos: start, line, col } = this.stream;
     return { start, line, col };
   }
@@ -75,7 +107,8 @@ export class Lexer {
         return this.eatWord();
       
       case Lexer.isPunct(char):
-        return this.eatPunct();
+        if (char == '|' && this.stream.after() == '|') return this.eatOperator();
+        else return this.eatPunct();
       
       case Lexer.isOperator(char):
         return this.eatOperator();
@@ -86,8 +119,10 @@ export class Lexer {
   }
   
   // consumption methods
+  // TODO: add support for bases 2, 8, 16
   private eatNumber () {
     let infixed = false;
+    // let base: number;
     const number = this.eatWhile((c) => {
       if (c == '.') {
         if (infixed) {
@@ -97,15 +132,15 @@ export class Lexer {
       }
       return Lexer.isDigit(c);
     });
-    return new Token(Type.NUM, parseFloat(number), number);
+    return new Token(this, Type.NUM, parseFloat(number), number);
   }
   private eatString () {
     const string = this.eatEscaped('"');
-    return new Token(Type.STR, string);
+    return new Token(this, Type.STR, string);
   }
   private eatWord () {
     const word = this.eatWhile(Lexer.isWord);
-    return new Token(Lexer.isKeyword(word) ? Type.KW : Type.SYM, word);
+    return new Token(this, Lexer.isKeyword(word) ? Type.KW : Type.SYM, word);
   }
   private skipComment () {
     if (this.stream.after() == '~')
@@ -124,14 +159,13 @@ export class Lexer {
     this.stream.next();
   }
   private eatPunct () {
-    return new Token(Type.PUNCT, this.stream.next());
+    return new Token(this, Type.PUNCT, this.stream.next());
   }
   private eatOperator () {
-    return new Token(Type.OP, this.eatWhile(Lexer.isOperator))
+    return new Token(this, Type.OP, this.eatWhile(Lexer.isOperator))
   }
 
   // modulating consumption of tokens
-  // TODO: add support for bases 2, 8, 16
   private eatEscaped (terminal: string) {
     let escaped = false, match = '';
     this.stream.next();
