@@ -15,6 +15,7 @@ export class Stream {
   next () {
     const char = this.source.charAt(this.pos++);
     if (char == '\n') this.col = 0, this.line++;
+    else { this.col++; }
     return char;
   }
   eof () {
