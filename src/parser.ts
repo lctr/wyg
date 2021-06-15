@@ -78,7 +78,10 @@ export class Parser {
   next () { return this.lexer.next(); }
   error (message: string) {
     const { col, line } = this.lexer.pos();
-    throw new Error(`${ message } at (${ line }:${ col })`);
+    const row = this.lexer.stream.row();
+    throw new Error(
+      `${ message } at (${ line }:${ col })\n\n  [${ line }] · ${ row }\n`
+    );
   }
   eat (literal: string) {
     const ch = this.peek().literal;
@@ -86,7 +89,15 @@ export class Parser {
       this.error(`Expected the literal ${ literal } but instead got ${ ch }`);
     this.next();
   }
-  
+  // parse the entire stream from the top
+  parse () {
+    const body = [];
+    while (!this.eof()) {
+      body.push(this.expression());
+      if (!this.eof()) this.eat(';');
+    }
+    return { type: Ast.Block, body };
+  }
   // handler for dispatch
   expression (): Expr {
     return this.maybeCall(this.atom);
@@ -132,10 +143,11 @@ export class Parser {
     token = this.next();
     if (token.validate(Type.OP, '->')) {
       body = [ this.or() ];
-      this.eat(';');
+      // this.eat(';');
     } else {
       body = this.block().body;
     }
+    this.next();
     return { type: Ast.Lambda, rule: Rule.Lambda, args, body };
   }
   block (): Block {
