@@ -1,21 +1,21 @@
 import { Stream } from './stream.ts';
 
-// lexeme kinds
+// lexeme kinds, used by lexer, parser, and interpreter
 export enum Type {
-  KW='kw', BOOL='bool', STR='str', NUM='num', SYM='sym', OP='op', PUNCT='punct', EOF='eof'
+  KW, BOOL, STR, NUM, SYM, OP, PUNCT, EOF
 }
 
 
 export class Token {
   literal: string;
-  start: number;
+  // start: number;
   end: number;
   line: number;
   col: number;
   constructor (
     lexer: Lexer | null,
     public type: Type,
-    public value: string | number,
+    public value: string | number | boolean,
     literal?: string
   ) {
     if (!literal) this.literal = value + '';
@@ -23,14 +23,14 @@ export class Token {
     if (!lexer) {
       this.line = -1;
       this.col = -1;
-      this.start = -1;
+      // this.start = -1;
       this.end = -1;
     }
     else {
       const { start, line, col } = lexer.pos();
       this.line = line;
       this.col = col;
-      this.start = start;
+      // this.start = start;
       this.end = start + this.literal.length;
     }
   }
@@ -44,8 +44,8 @@ export class Token {
     }
     return false;
   }
-  toString () {
-    return `${ this.type } :: ${ this.value }`;
+  toJSON () {
+    return `{ type: ${ Type[ this.type ] }, value: ${ this.value }, line: ${ this.line }, col: ${ this.col } }`;
   }
 }
 
@@ -94,24 +94,24 @@ export class Lexer {
 
     switch (true) {
       case Lexer.isComment(char, this.stream.after()):
-        this.skipComment();
+        this.comment();
         return this.peekNext();
       
       case (char == '"'):
-        return this.eatString();
+        return this.string();
       
       case Lexer.isDigit(char):
-        return this.eatNumber();
+        return this.number();
       
-      case Lexer.isWordStart(char):
-        return this.eatWord();
+      case Lexer.startsWord(char):
+        return this.word();
       
       case Lexer.isPunct(char):
-        if (char == '|' && this.stream.after() == '|') return this.eatOperator();
-        else return this.eatPunct();
+        if (char == '|' && this.stream.after() == '|') return this.operator();
+        else return this.punct();
       
       case Lexer.isOperator(char):
-        return this.eatOperator();
+        return this.operator();
       
       default:
         throw this.error("Unable to tokenize " + char);
@@ -120,7 +120,7 @@ export class Lexer {
   
   // consumption methods
   // TODO: add support for bases 2, 8, 16
-  private eatNumber () {
+  private number () {
     let infixed = false;
     // let base: number;
     const number = this.eatWhile((c) => {
@@ -134,15 +134,15 @@ export class Lexer {
     });
     return new Token(this, Type.NUM, parseFloat(number), number);
   }
-  private eatString () {
-    const string = this.eatEscaped('"');
+  private string () {
+    const string = this.escaped('"');
     return new Token(this, Type.STR, string);
   }
-  private eatWord () {
+  private word () {
     const word = this.eatWhile(Lexer.isWord);
     return new Token(this, Lexer.isKeyword(word) ? Type.KW : Type.SYM, word);
   }
-  private skipComment () {
+  private comment () {
     if (this.stream.after() == '~')
       this.eatWhile((c) => c != '\n');
     else {
@@ -158,15 +158,15 @@ export class Lexer {
     }
     this.stream.next();
   }
-  private eatPunct () {
+  private punct () {
     return new Token(this, Type.PUNCT, this.stream.next());
   }
-  private eatOperator () {
+  private operator () {
     return new Token(this, Type.OP, this.eatWhile(Lexer.isOperator))
   }
 
   // modulating consumption of tokens
-  private eatEscaped (terminal: string) {
+  private escaped (terminal: string) {
     let escaped = false, match = '';
     this.stream.next();
     while (!this.stream.eof()) {
@@ -204,11 +204,11 @@ export class Lexer {
   private static isOperator (char: string) {
     return "=&|<>!+-*/^%".indexOf(char) > -1;
   }
-  private static isWordStart (char: string) {
+  private static startsWord (char: string) {
     return /[a-z_\:]/i.test(char);
   }
   private static isWord (word: string) {
-    return Lexer.isWordStart(word) || /[a-z\d]/i.test(word);
+    return Lexer.startsWord(word) || /[a-z\d]/i.test(word);
   }
   private static isPunct (char: string) {
     return ",;()[]{}|".indexOf(char) > -1;
