@@ -25,7 +25,10 @@ export class Stream {
     return this.peek() == '';
   }
   error (msg: string) {
-    throw new Error(`${ msg } at (${ this.line }:${ this.col })`);
+    const message = `${ msg } at (${ this.line }:${ this.col })`;
+    const snippet = `\n\n  [${ this.line }] · ${ this.source.slice(this.pos - this.col, this.col) }\n`;
+    
+    throw new Error(`${message}${snippet}`);
   }
   // get line up to corrent position for logging
   row () {
