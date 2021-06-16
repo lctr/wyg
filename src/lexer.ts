@@ -5,6 +5,7 @@ export enum Type {
   KW, BOOL, STR, NUM, SYM, OP, PUNCT, EOF
 }
 
+export const KW = " let if then else true false ";
 
 export class Token {
   literal: string;
@@ -61,7 +62,6 @@ export const EOF = new Token(null, Type.EOF, '');
 export class Lexer {
   stream: Stream;
   private current!: Token | null;
-  private static readonly keywords = " let if then else true false ";
   constructor (source: string | Stream) {
     if (source instanceof Stream) this.stream = source;
     else this.stream = new Stream(source);
@@ -79,38 +79,38 @@ export class Lexer {
     return token || this.peekNext();
   }
   eof () {
-    return this.peekNext().type === Type.EOF;
+    return this.peek().type === Type.EOF;
   }
   pos () {
     const { pos: start, line, col } = this.stream;
     return { start, line, col };
   }
   peekNext (): Token {
-    this.eatWhile(Lexer.isSpace);
+    this.eatWhile(isSpace);
 
-    if (this.stream.eof()) return EOF;
+    if (this.stream.eof()) return new Token(this, Type.EOF, '\\0');
 
     const char = this.stream.peek();
 
     switch (true) {
-      case Lexer.isComment(char, this.stream.after()):
+      case isComment(char, this.stream.after()):
         this.comment();
         return this.peekNext();
       
       case (char == '"'):
         return this.string();
       
-      case Lexer.isDigit(char):
+      case isDigit(char):
         return this.number();
       
-      case Lexer.startsWord(char):
+      case startsWord(char):
         return this.word();
       
-      case Lexer.isPunct(char):
+      case isPunct(char):
         if (char == '|' && this.stream.after() == '|') return this.operator();
         else return this.punct();
       
-      case Lexer.isOperator(char):
+      case isOperator(char):
         return this.operator();
       
       default:
@@ -125,12 +125,11 @@ export class Lexer {
     // let base: number;
     const number = this.eatWhile((c) => {
       if (c == '.') {
-        if (infixed) {
-          infixed = true;
-          return true;
-        }
+        if (infixed) return false;
+        infixed = true;
+        return true;
       }
-      return Lexer.isDigit(c);
+      return isDigit(c);
     });
     return new Token(this, Type.NUM, parseFloat(number), number);
   }
@@ -139,8 +138,8 @@ export class Lexer {
     return new Token(this, Type.STR, string);
   }
   private word () {
-    const word = this.eatWhile(Lexer.isWord);
-    return new Token(this, Lexer.isKeyword(word) ? Type.KW : Type.SYM, word);
+    const word = this.eatWhile(isWord);
+    return new Token(this, isKeyword(word) ? Type.KW : Type.SYM, word);
   }
   private comment () {
     if (this.stream.after() == '~')
@@ -162,7 +161,7 @@ export class Lexer {
     return new Token(this, Type.PUNCT, this.stream.next());
   }
   private operator () {
-    return new Token(this, Type.OP, this.eatWhile(Lexer.isOperator))
+    return new Token(this, Type.OP, this.eatWhile(isOperator))
   }
 
   // modulating consumption of tokens
@@ -190,32 +189,32 @@ export class Lexer {
     }
     return word;
   }
+}
 
-  // lexeme pattern matching utilities
-  private static isKeyword (word: string) {
-    return Lexer.keywords.indexOf(` ${ word } `) > -1;
-  }
-  private static isSpace (char: string) {
-    return /\s/.test(char);
-  }
-  private static isDigit (char: string) {
-    return /[0-9]/i.test(char);
-  }
-  private static isOperator (char: string) {
-    return "=&|<>!+-*/^%".indexOf(char) > -1;
-  }
-  private static startsWord (char: string) {
-    return /[a-z_\:]/i.test(char);
-  }
-  private static isWord (word: string) {
-    return Lexer.startsWord(word) || /[a-z\d]/i.test(word);
-  }
-  private static isPunct (char: string) {
-    return ",;()[]{}|".indexOf(char) > -1;
-  }
-  private static isComment (left: string, right: string) {
-    return " ~~ ~* ".indexOf(left + right) > -1;
-  }
+// pattern matching utils as functions instead of static methods
+function isKeyword(word: string) {
+  return KW.indexOf(` ${ word } `) > -1;
+}
+function isSpace(char: string) {
+  return /\s/.test(char);
+}
+function isDigit(char: string) {
+  return /[0-9]/i.test(char);
+}
+  function isOperator(char: string) {
+  return "=&|<>!+-*/^%".indexOf(char) > -1;
+}
+  function startsWord(char: string) {
+  return /[a-z_\:]/i.test(char);
+}
+  function isWord(word: string) {
+  return startsWord(word) || /[a-z\d]/i.test(word);
+}
+  function isPunct(char: string) {
+  return ",;()[]{}|".indexOf(char) > -1;
+}
+  function isComment(left: string, right: string) {
+  return " ~~ ~* ".indexOf(' ' + left + right + ' ') > -1;
 }
 
 export default { Type, Token, Lexer, EOF };
