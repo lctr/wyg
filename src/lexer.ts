@@ -50,8 +50,6 @@ export class Token {
   }
 }
 
-export const EOF = new Token(null, Type.EOF, '');
-
 /**
  * Generates a stream of tokens from a given string input. Upon completion of stream, all following token value calls will return `null`.
  * 
@@ -96,28 +94,30 @@ export class Lexer {
       case isComment(char, this.stream.after()):
         this.comment();
         return this.peekNext();
-      
+
       case (char == '"'):
         return this.string();
-      
+
       case isDigit(char):
         return this.number();
-      
+
       case startsWord(char):
         return this.word();
-      
+
       case isPunct(char):
-        if (char == '|' && this.stream.after() == '|') return this.operator();
-        else return this.punct();
-      
+        if (char == '|' && this.stream.after() == '|')
+          return this.operator();
+        else
+          return this.punct();
+
       case isOperator(char):
         return this.operator();
-      
+
       default:
         throw this.error("Unable to tokenize " + char);
     }
   }
-  
+
   // consumption methods
   // TODO: add support for bases 2, 8, 16
   private number () {
@@ -148,8 +148,7 @@ export class Lexer {
       let penult = false;
       this.eatWhile(c => {
         if (penult)
-          if (c == '~')
-            return false;
+          if (c == '~') return false;
           else penult = false;
         else if (c == '*') penult = true;
         return true;
@@ -161,7 +160,7 @@ export class Lexer {
     return new Token(this, Type.PUNCT, this.stream.next());
   }
   private operator () {
-    return new Token(this, Type.OP, this.eatWhile(isOperator))
+    return new Token(this, Type.OP, this.eatWhile(isOperator));
   }
 
   // modulating consumption of tokens
@@ -192,29 +191,29 @@ export class Lexer {
 }
 
 // pattern matching utils as functions instead of static methods
-function isKeyword(word: string) {
+function isKeyword (word: string) {
   return KW.indexOf(` ${ word } `) > -1;
 }
-function isSpace(char: string) {
+function isSpace (char: string) {
   return /\s/.test(char);
 }
-function isDigit(char: string) {
+function isDigit (char: string) {
   return /[0-9]/i.test(char);
 }
-  function isOperator(char: string) {
+function isOperator (char: string) {
   return "=&|<>!+-*/^%".indexOf(char) > -1;
 }
-  function startsWord(char: string) {
+function startsWord (char: string) {
   return /[a-z_\:]/i.test(char);
 }
-  function isWord(word: string) {
+function isWord (word: string) {
   return startsWord(word) || /[a-z\d]/i.test(word);
 }
-  function isPunct(char: string) {
+function isPunct (char: string) {
   return ",;()[]{}|".indexOf(char) > -1;
 }
-  function isComment(left: string, right: string) {
+function isComment (left: string, right: string) {
   return " ~~ ~* ".indexOf(' ' + left + right + ' ') > -1;
 }
 
-export default { Type, Token, Lexer, EOF };
+export default { Type, Token, Lexer };
