@@ -38,6 +38,12 @@ export class Token {
   typeIs (t: string | Type) {
     return (this.type === t);
   }
+  typeIn (...types: Type[]) {
+    for (const t of types)
+      if (this.type === t)
+        return true;
+    return false;
+  }
   validate (type: Type, ...literal: string[]) {
     if (type !== this.type) return false;
     for (const val of literal) {
@@ -59,7 +65,7 @@ export class Token {
  */
 export class Lexer {
   stream: Stream;
-  private current!: Token | null;
+  private current: Token | null = null;
   constructor (source: string | Stream) {
     if (source instanceof Stream) this.stream = source;
     else this.stream = new Stream(source);
