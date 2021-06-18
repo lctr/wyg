@@ -67,21 +67,22 @@ const FALSE = { type: Type.BOOL, value: false, literal: 'false', start: -1, end:
 
 export class Parser {
   lexer: Lexer;
+  tokens: Token[] = [];
   constructor (source: string) {
     this.lexer = new Lexer(source);
   }
   eof () {
-    return this.lexer.peek().type === Type.EOF;
+    return this.lexer.eof();
   }
   peek () { return this.lexer.peek(); }
   after () { return this.lexer.peekNext(); }
-  next () { return this.lexer.next(); }
+  next () {
+    const token = this.lexer.next();
+    if (token.type !== Type.EOF) this.tokens.push(token);
+    return token;
+  }
   error (message: string) {
-    const { col, line } = this.lexer.pos();
-    const row = this.lexer.stream.row();
-    throw new Error(
-      `${ message } at (${ line }:${ col })\n\n  [${ line }] · ${ row }\n`
-    );
+    this.lexer.error(message);
   }
   eat (literal: string) {
     const ch = this.peek().literal;
@@ -94,17 +95,29 @@ export class Parser {
     const body = [];
     while (!this.eof()) {
       body.push(this.expression());
-      if (!this.eof()) this.eat(';');
+      if (!this.lexer.eof())
+        this.eat(';');
     }
     return { type: Ast.Block, body };
   }
-  // handler for dispatch
+  // handler for _expr
   expression (): Expr {
-    return this.maybeCall(this.atom);
+
+    return this.callish(() => this._expr(this.atom));
   }
+  _expr (parser: () => Expr): Expr {
+    let token = this.peek();
+    if (!token.typeIs(Type.OP)) {
+      
+      return this.assign();
+    } else {
+      return parser.call(this);
+    }
+  }
+  
   // identifies a `call` node after a parsed expression
-  maybeCall (parsed: () => Expr): Expr {
-    const expr = parsed.call(this);
+  callish (parsed: () => Expr): Expr {
+    const expr: Expr = parsed.call(this);
     return this.peek().validate(Type.PUNCT, '(') ? this.invoke(expr) : expr;
   }
   // unsure as to whether calling this method `apply` or `call` will affect later use of Object prototype call/apply methods in evaluator, though theoretically it shouldn't matter since the apply/call nodes will have {} as prototypes
@@ -112,7 +125,7 @@ export class Parser {
     this.eat('(');
     let token = this.peek();
     const args = [];
-    while (token.literal != '}') {
+    while (token.literal != ')') {
       const expr = this.expression();
       args.push(expr);
       this.next();
@@ -140,21 +153,19 @@ export class Parser {
     }
     this.eat('|');
     let body: Expr[];
-    token = this.next();
-    if (token.validate(Type.OP, '->')) {
-      body = [ this.or() ];
-      // this.eat(';');
-    } else {
+    token = this.peek();
+    if (token.validate(Type.OP, '{')) {
       body = this.block().body;
+    } else {
+      body = [this.expression()];
     }
-    this.next();
     return { type: Ast.Lambda, rule: Rule.Lambda, args, body };
   }
   block (): Block {
     this.eat('{');
     let token = this.peek();
     const body = [];
-    while (!token.validate(Type.PUNCT, '}')) {
+    while (token.literal !== '}') {
       const expr = this.expression();
       body.push(expr);
       this.next();
@@ -169,51 +180,70 @@ export class Parser {
     return {type: Ast.Block, rule: Rule.Block, body};
   }
   atom (): Expr {
-    let token = this.peek();
-    if (token.validate(Type.PUNCT, '(')) {
-      this.next();
-      const expr: Expr = this.or();
-      this.eat(')');
-      return expr;
-    }
-    if (token.validate(Type.PUNCT, '{')) {
-      const expr = this.block();
-      this.next();
-      return expr;
-    }
-    if (token.validate(Type.PUNCT, '|')) {
-      const expr: Expr = this.lambda();
-      this.next();
-      // TODO: check for apply
-      return expr;
-    }
-    if (token.validate(Type.KW, 'let')) {
-      // SHOULD BECOME VARIABLE DEF NODE LATER
-      this.eat('let');
-      return this.assign();
-    }
-    if (token.validate(Type.KW, 'true') || token.validate(Type.KW, 'false')) {
-      const value = token.value == 'true';
-      return this.literal(Type.BOOL, value);
-    }
+    return this.callish(() => {
+      let token = this.peek();
 
-    if (token.type === Type.NUM || token.type === Type.STR || token.type === Type.SYM) {
-      this.next();
-      return token;
-    }
-    throw this.error("Unable to parse " + token);
-    // return token;
+      if (token.validate(Type.PUNCT, '(')) {
+        this.next();
+        const expr: Expr = this.expression();
+        this.eat(')');
+        return expr;
+      }
+      if (token.validate(Type.PUNCT, '{')) {
+        const expr = this.block();
+        this.next();
+        return expr;
+      }
+      if (token.validate(Type.KW, 'let')) {
+        // SHOULD BECOME VARIABLE DEF NODE LATER
+        this.eat('let');
+        return this.assign();
+      }
+      if (token.validate(Type.KW, 'true') || token.validate(Type.KW, 'false')) {
+        const value = token.value == 'true';
+        this.next();
+        return this.literal(Type.BOOL, value);
+      }
+      if (token.validate(Type.PUNCT, '|')) {
+        const expr: Expr = this.lambda();
+        this.next();
+        // TODO: check for apply
+        return expr;
+      }
+
+      if (token.type === Type.NUM || token.type === Type.STR || token.type === Type.SYM) {
+        this.next();
+        return token;
+      }
+
+      throw this.error("Unable to parse " + token.toJSON());
+      // return token;
+    });
   }
-  
+  variable() {}
   assign (): Assign | Expr {
-    const token = this.peek();
-    if (this.after().typeIs(Type.SYM)) {
-      this.next();
-      this.eat('=');
-      const right = this.or();
-      return { type: Ast.Assign, rule: Rule.Assign, operator: '=', left: token, right };
-    }
-    return this.or();
+    // let token = this.peek();
+    // if (token.typeIs(Type.SYM)) {
+    //   if (this.after().validate(Type.OP, '=')) {
+    //     const left = token;
+    //     this.next();
+    //     this.eat('=');
+    //     const right = this.callish(this.assign);
+    //     token = this.peek();
+    //     return { type: Ast.Assign, rule: Rule.Assign, operator: '=', left, right };
+    //   }
+    // }
+    // else if (token.validate(Type.PUNCT, '(')) {
+    //   const parser = () => {
+    //     if (this.peek().typeIs(Type.OP))
+    //     this.next();
+    //     const expr = this.or();
+    //     this.eat(')');
+    //     return expr;
+    //   }
+    //   return this.callish(parser);
+    // }
+    return this.binary(this.or, Rule.Assign, '=');
   }
   binary (parser: () => Expr, rule: Rule, ...ops: string[]): Expr {
     // since we may lose context as we pass parsers around, we call the parser using the prototype's call method
@@ -246,4 +276,7 @@ export class Parser {
     return { type, rule: Rule.Literal, value };
   }
 }
+
+
+
 
