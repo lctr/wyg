@@ -1,66 +1,11 @@
 import { Stream } from './stream.ts';
-
-// lexeme kinds, used by lexer, parser, and interpreter
-export enum Type {
-  KW, BOOL, STR, NUM, SYM, OP, PUNCT, EOF
-}
-
-export const KW = " let if then else true false ";
-
-export class Token {
-  literal: string;
-  // start: number;
-  end: number;
-  line: number;
-  col: number;
-  constructor (
-    lexer: Lexer | null,
-    public type: Type,
-    public value: string | number | boolean,
-    literal?: string
-  ) {
-    if (!literal) this.literal = value + '';
-    else this.literal = literal;
-    if (!lexer) {
-      this.line = -1;
-      this.col = -1;
-      // this.start = -1;
-      this.end = -1;
-    }
-    else {
-      const { start, line, col } = lexer.pos();
-      this.line = line;
-      this.col = col;
-      // this.start = start;
-      this.end = start + this.literal.length;
-    }
-  }
-  typeIs (t: string | Type) {
-    return (this.type === t);
-  }
-  typeIn (...types: Type[]) {
-    for (const t of types)
-      if (this.type === t)
-        return true;
-    return false;
-  }
-  validate (type: Type, ...literal: string[]) {
-    if (type !== this.type) return false;
-    for (const val of literal) {
-      if (val === this.literal) return true;
-    }
-    return false;
-  }
-  toJSON () {
-    return `{ type: ${ Type[ this.type ] }, value: ${ this.value }, line: ${ this.line }, col: ${ this.col } }`;
-  }
-}
-
+import { Type, KW, Token, Lexeme, Prim } from './token.ts';
+export { Type, Token } from './token.ts';
 /**
  * Generates a stream of tokens from a given string input. Upon completion of stream, all following token value calls will return `null`.
  * 
- * Peek to see where we're at
- * PeekNext to lookahead 
+ * Peek to see what we'd consume
+ * PeekNext see next token
  * Next to update stream position
  */
 export class Lexer {
@@ -69,6 +14,9 @@ export class Lexer {
   constructor (source: string | Stream) {
     if (source instanceof Stream) this.stream = source;
     else this.stream = new Stream(source);
+  }
+  get false () {
+    return this.token(Type.BOOL, false, '<FALSE>')
   }
   // state methods
   error (message: string) {
@@ -86,13 +34,12 @@ export class Lexer {
     return this.peek().type === Type.EOF;
   }
   pos () {
-    const { pos: start, line, col } = this.stream;
-    return { start, line, col };
+    return { line: this.stream.line, col: this.stream.col };
   }
   peekNext (): Token {
     this.eatWhile(isSpace);
 
-    if (this.stream.eof()) return new Token(this, Type.EOF, '\\0');
+    if (this.stream.eof()) return this.token(Type.EOF, '\\0');
 
     const char = this.stream.peek();
 
@@ -123,6 +70,9 @@ export class Lexer {
         throw this.error("Unable to tokenize " + char);
     }
   }
+  token (type: Type, value: Prim, literal?: string) {
+    return new Token(type, value, this.pos(), literal);
+  }
 
   // consumption methods
   // TODO: add support for bases 2, 8, 16
@@ -137,15 +87,15 @@ export class Lexer {
       }
       return isDigit(c);
     });
-    return new Token(this, Type.NUM, parseFloat(number), number);
+    return this.token(Type.NUM, parseFloat(number), number);
   }
   private string () {
     const string = this.escaped('"');
-    return new Token(this, Type.STR, string);
+    return this.token(Type.STR, string);
   }
   private word () {
     const word = this.eatWhile(isWord);
-    return new Token(this, isKeyword(word) ? Type.KW : Type.SYM, word);
+    return this.token(isKeyword(word) ? Type.KW : Type.SYM, word);
   }
   private comment () {
     if (this.stream.after() == '~')
@@ -163,10 +113,10 @@ export class Lexer {
     this.stream.next();
   }
   private punct () {
-    return new Token(this, Type.PUNCT, this.stream.next());
+    return this.token(Type.PUNCT, this.stream.next());
   }
   private operator () {
-    return new Token(this, Type.OP, this.eatWhile(isOperator));
+    return this.token(Type.OP, this.eatWhile(isOperator));
   }
 
   // modulating consumption of tokens
