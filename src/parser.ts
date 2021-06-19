@@ -1,69 +1,10 @@
-import { Lexer, Token, Type } from './lexer.ts';
-export { Token, Type } from './lexer.ts';
+import { Token, Type } from './token.ts';
+import { Lexer } from './lexer.ts';
 
-export enum Ast {
-  Block, Lambda, Call, Assign, Binary, Unary,
-} 
-
-export enum Rule {
-  Call = 'call', Block = 'sequence', Lambda = 'lambda', Assign = 'assign', Or = 'or', And = 'and', Equality = 'equality', Compare = 'compare', Term = 'term', Factor = 'factor', Unary = 'unary', Literal = 'literal'
-}
-
-export interface ExprBase {
-  type: Ast | Type
-}
-
-export interface BinExpr extends ExprBase {
-  type: Ast,
-  rule: Rule,
-  operator: string,
-  left: Expr,
-  right: Expr,
-}
-export interface UnExpr extends ExprBase {
-  type: Ast,
-  rule: Rule,
-  operator: string,
-  right: Expr,
-}
-
-export interface Literal extends ExprBase {
-  type: Type,
-  rule: Rule,
-  value: string | number | boolean,
-}
-
-export interface Lambda extends ExprBase {
-  type: Ast, rule: Rule,
-  args: string[],
-  body: Expr[],
-}
-
-export interface Call extends ExprBase {
-  type: Ast,
-  rule: Rule,
-  fn: Expr,
-  args: Expr[],
-}
-
-export interface Assign extends ExprBase {
-  type: Ast,
-  rule: Rule,
-  operator: string,
-  left: Expr,
-  right: Expr
-}
-
-export interface Block {
-  type: Ast,
-  rule: Rule,
-  body: Expr[],
-}
-
-
-export type Expr = Block | Lambda | Call | Assign | BinExpr | UnExpr | Literal | Token;
-
-const FALSE = { type: Type.BOOL, value: false, literal: 'false', start: -1, end: -1, line: -1, col: -1 } as unknown as Token; 
+import { Ast, Rule } from './nodeType.ts'
+import type { Expr, Block, Lambda, Call, Assign, BinExpr, UnExpr, Literal } from './nodeType.ts';
+export { Type, Ast, Rule } from './nodeType.ts';
+export type { Expr } from './nodeType.ts';
 
 export class Parser {
   lexer: Lexer;
@@ -91,24 +32,23 @@ export class Parser {
     this.next();
   }
   // parse the entire stream from the top
-  parse () {
-    const body = [];
+  parse (): Block {
+    const body: Expr[] = [];
     while (!this.eof()) {
       body.push(this.expression());
+      // console.log(body);
       if (!this.lexer.eof())
         this.eat(';');
     }
-    return { type: Ast.Block, body };
+    return { type: Ast.Block, rule: Rule.Block, body };
   }
   // handler for _expr
   expression (): Expr {
-
     return this.callish(() => this._expr(this.atom));
   }
   _expr (parser: () => Expr): Expr {
-    let token = this.peek();
+    const token = this.peek();
     if (!token.typeIs(Type.OP)) {
-      
       return this.assign();
     } else {
       return parser.call(this);
@@ -118,7 +58,8 @@ export class Parser {
   // identifies a `call` node after a parsed expression
   callish (parsed: () => Expr): Expr {
     const expr: Expr = parsed.call(this);
-    return this.peek().validate(Type.PUNCT, '(') ? this.invoke(expr) : expr;
+    console.log(expr);
+    return this.peek().validate(Type.PUNCT, '(', '<-') ? this.invoke(expr) : expr;
   }
   // unsure as to whether calling this method `apply` or `call` will affect later use of Object prototype call/apply methods in evaluator, though theoretically it shouldn't matter since the apply/call nodes will have {} as prototypes
   invoke (fn: Expr): Expr {
@@ -152,19 +93,19 @@ export class Parser {
       token = this.peek();
     }
     this.eat('|');
-    let body: Expr[];
+    let body: Expr;
     token = this.peek();
     if (token.validate(Type.OP, '{')) {
-      body = this.block().body;
+      body = this.block();
     } else {
-      body = [this.expression()];
+      body = this.expression();
     }
     return { type: Ast.Lambda, rule: Rule.Lambda, args, body };
   }
-  block (): Block {
+  block (): Block | Expr {
     this.eat('{');
     let token = this.peek();
-    const body = [];
+    const body: Expr[] = [];
     while (token.literal !== '}') {
       const expr = this.expression();
       body.push(expr);
@@ -176,17 +117,18 @@ export class Parser {
     }
     this.eat('}');
 
-    if (body.length === 0) body.push(FALSE);
+    if (body.length === 0) return this.lexer.false;
+    if (body.length === 1) return body[ 0 ];
     return {type: Ast.Block, rule: Rule.Block, body};
   }
   atom (): Expr {
     return this.callish(() => {
-      let token = this.peek();
+      const token = this.peek();
 
       if (token.validate(Type.PUNCT, '(')) {
         this.next();
         const expr: Expr = this.expression();
-        this.eat(')');
+        // this.eat(')');
         return expr;
       }
       if (token.validate(Type.PUNCT, '{')) {
@@ -207,7 +149,7 @@ export class Parser {
       if (token.validate(Type.PUNCT, '|')) {
         const expr: Expr = this.lambda();
         this.next();
-        // TODO: check for apply
+        // TODO: check for apply?
         return expr;
       }
 
@@ -216,33 +158,12 @@ export class Parser {
         return token;
       }
 
-      throw this.error("Unable to parse " + token.toJSON());
+      throw this.error("Unable to parse " + JSON.stringify(token._json(), null, 2));
       // return token;
     });
   }
   variable() {}
   assign (): Assign | Expr {
-    // let token = this.peek();
-    // if (token.typeIs(Type.SYM)) {
-    //   if (this.after().validate(Type.OP, '=')) {
-    //     const left = token;
-    //     this.next();
-    //     this.eat('=');
-    //     const right = this.callish(this.assign);
-    //     token = this.peek();
-    //     return { type: Ast.Assign, rule: Rule.Assign, operator: '=', left, right };
-    //   }
-    // }
-    // else if (token.validate(Type.PUNCT, '(')) {
-    //   const parser = () => {
-    //     if (this.peek().typeIs(Type.OP))
-    //     this.next();
-    //     const expr = this.or();
-    //     this.eat(')');
-    //     return expr;
-    //   }
-    //   return this.callish(parser);
-    // }
     return this.binary(this.or, Rule.Assign, '=');
   }
   binary (parser: () => Expr, rule: Rule, ...ops: string[]): Expr {
@@ -277,6 +198,6 @@ export class Parser {
   }
 }
 
-
-
-
+export function parse (program: string) {
+  return new Parser(program).parse();
+}
