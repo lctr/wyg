@@ -3,6 +3,7 @@ import type {
   Assign,
   BinExpr,
   Block,
+  Conditional,
   Call,
   Lambda,
   Literal,
@@ -85,6 +86,8 @@ export function evaluate(expr: Expr, env: Scope): Value {
     // case Ast.Unary:
     case Ast.Lambda:
       return evalLambda(expr as Lambda, env);
+    case Ast.Condition:
+      return evalConditional(expr as Conditional, env);
     case Ast.Block:
       return evalBlock(expr as Block, env);
     case Ast.Call:
@@ -94,6 +97,13 @@ export function evaluate(expr: Expr, env: Scope): Value {
     default:
       throw new Error("Unable to evaluate " + JSON.stringify(expr, null, 2));
   }
+}
+
+function evalConditional (expr: Conditional, env: Scope) {
+  if (evaluate(expr.cond, env) !== false) {
+    return evaluate(expr.then, env);
+  }
+  return expr.else ? evaluate(expr.else, env) : false; 
 }
 
 function evalVariable(expr: Variable, env: Scope) {
