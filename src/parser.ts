@@ -1,203 +1,315 @@
-import { Token, Type } from './token.ts';
-import { Lexer } from './lexer.ts';
+import { Token, Type } from "./token.ts";
+import { Lexer } from "./lexer.ts";
 
-import { Ast, Rule } from './nodeType.ts'
-import type { Expr, Block, Lambda, Call, Assign, BinExpr, UnExpr, Literal } from './nodeType.ts';
-export { Type, Ast, Rule } from './nodeType.ts';
-export type { Expr } from './nodeType.ts';
+import { Ast, Rule } from "./expression.ts";
+import type {
+  Assign,
+  Binding,
+  BinExpr,
+  Block,
+  Conditional,
+  Call,
+  Expr,
+  Lambda,
+  Literal,
+  UnExpr,
+  Variable,
+} from "./expression.ts";
+export { Ast, Rule, Type } from "./expression.ts";
+export type { Expr } from "./expression.ts";
 
 export class Parser {
   lexer: Lexer;
   tokens: Token[] = [];
-  constructor (source: string) {
+  constructor(source: string) {
     this.lexer = new Lexer(source);
   }
-  eof () {
-    return this.lexer.eof();
+  eof() {
+    return this.peek().type === Type.EOF;
   }
-  peek () { return this.lexer.peek(); }
-  after () { return this.lexer.peekNext(); }
-  next () {
+  peek() {
+    return this.lexer.peek();
+  }
+  after() {
+    return this.lexer.peekNext();
+  }
+  next() {
     const token = this.lexer.next();
     if (token.type !== Type.EOF) this.tokens.push(token);
     return token;
   }
-  error (message: string) {
+  error(message: string) {
+    console.log("tokens parsed: ", this.tokens);
     this.lexer.error(message);
   }
-  eat (literal: string) {
+  eat(literal: string) {
     const ch = this.peek().literal;
-    if (ch !== literal)
-      this.error(`Expected the literal ${ literal } but instead got ${ ch }`);
+    if (ch !== literal) {
+      this.error(`Expected the literal ${literal} but instead got ${ch}`);
+    }
     this.next();
   }
   // parse the entire stream from the top
-  parse (): Block {
+  parse(): Block {
     const body: Expr[] = [];
     while (!this.eof()) {
       body.push(this.expression());
-      // console.log(body);
-      if (!this.lexer.eof())
-        this.eat(';');
+      if (!this.lexer.eof()) {
+        this.eat(";");
+      }
     }
     return { type: Ast.Block, rule: Rule.Block, body };
   }
-  // handler for _expr
-  expression (): Expr {
-    return this.callish(() => this._expr(this.atom));
+  // handler for group
+  // 
+  expression(): Expr {
+    return this.callish(() => this.group(this.atom));
   }
-  _expr (parser: () => Expr): Expr {
+  group(parser: () => Expr): Expr {
     const token = this.peek();
     if (!token.typeIs(Type.OP)) {
-      return this.assign();
+      return this.callish(this.assign);
     } else {
       return parser.call(this);
     }
   }
-  
-  // identifies a `call` node after a parsed expression
-  callish (parsed: () => Expr): Expr {
+  // identifies a `apply` node after a parsed expression
+  callish(parsed: () => Expr): Expr {
     const expr: Expr = parsed.call(this);
-    console.log(expr);
-    return this.peek().validate(Type.PUNCT, '(', '<-') ? this.invoke(expr) : expr;
+    const token = this.peek();
+    // console.log(expr);
+    return token.validate(Type.PUNCT, "(") ? this.apply(expr) : expr;
   }
-  // unsure as to whether calling this method `apply` or `call` will affect later use of Object prototype call/apply methods in evaluator, though theoretically it shouldn't matter since the apply/call nodes will have {} as prototypes
-  invoke (fn: Expr): Expr {
-    this.eat('(');
-    let token = this.peek();
-    const args = [];
-    while (token.literal != ')') {
-      const expr = this.expression();
-      args.push(expr);
-      this.next();
-      if (this.peek().literal == ',')
-        this.eat(',');
-      token = this.peek();
-    }
-    this.eat(')');
+  apply(fn: Expr): Expr {
+    const args = this.wrapped("(", ",", ")", this.expression);
+    this.next();
     return { type: Ast.Call, rule: Rule.Call, fn, args };
   }
-  lambda (): Lambda {
-    this.eat('|');
+  conditional () {
+    this.eat('if');
+    const cond = this.expression();
+    if (!this.peek().validate(Type.PUNCT, '{')) { this.eat('then'); }
+    const then = this.expression();
+    const expr: Conditional = { type: Ast.Condition, cond, then};
+    if (this.peek().validate(Type.KW, 'else')) {
+      this.next();
+      expr.else = this.expression();
+    }
+    return expr; 
+  }
+  wrapped<E>(left: string, mid: string, right: string, parser: () => E): E[] {
+    const nodes = [];
+    const done = () => this.peek().validate(Type.PUNCT, right);
+    let first = true;
+    this.eat(left);
+    while (!this.eof()) {
+      if (done()) break;
+      if (first) first = false;
+      else this.eat(mid);
+      if (done()) break;
+      nodes.push(parser.call(this));
+    }
+    this.eat(right);
+    return nodes;
+  }
+  variable(): Lambda | Call | Variable {
+    this.eat("let");
+
+    if (this.peek().typeIs(Type.SYM)) {
+      const name = this.after().literal;
+      // console.log("name: " + name);
+      const defs = this.wrapped("(", ",", ")", this.binding);
+      this.next();
+      return {
+        type: Ast.Call,
+        rule: Rule.Call,
+        fn: {
+          type: Ast.Lambda,
+          rule: Rule.Lambda,
+          name,
+          args: defs.map((def) => def.name),
+          body: this.expression(),
+        },
+        args: defs.map((def) => def.def ?? this.lexer.false),
+      };
+    }
+    return {
+      type: Ast.Variable,
+      rule: Rule.Variable,
+      args: this.wrapped("(", ",", ")", this.binding),
+      body: this.expression(),
+    };
+  }
+  binding(): Binding {
+    const name = this.peek().literal;
+    let def!: Expr;
+    this.next();
+    if (this.peek().literal == "=") {
+      this.next();
+      def = this.expression();
+    }
+    return { name, def };
+  }
+  lambda(): Lambda {
     let token = this.peek();
+    const name = token.typeIs(Type.SYM) ? token.literal : null;
+    if (name) this.next();
+    this.eat("|");
+    token = this.peek();
     const args = [];
-    while (token.literal !== '|') {
-      if (!token.typeIs(Type.SYM))
+    while (token.literal !== "|") {
+      if (!token.typeIs(Type.SYM)) {
         this.error("Lambda parameters must be unbound symbols!");
+      }
 
       args.push(token.literal);
       this.next();
-      if (this.peek().literal === ',') {
-        this.eat(',');
+      if (this.peek().literal === ",") {
+        this.eat(",");
       }
       token = this.peek();
     }
-    this.eat('|');
+    this.eat("|");
     let body: Expr;
     token = this.peek();
-    if (token.validate(Type.OP, '{')) {
+    if (token.validate(Type.OP, "{")) {
       body = this.block();
     } else {
       body = this.expression();
     }
-    return { type: Ast.Lambda, rule: Rule.Lambda, args, body };
+    return { type: Ast.Lambda, rule: Rule.Lambda, name, args, body };
   }
-  block (): Block | Expr {
-    this.eat('{');
+  block(): Block | Expr {
+    this.eat("{");
     let token = this.peek();
     const body: Expr[] = [];
-    while (token.literal !== '}') {
+    while (token.literal !== "}") {
       const expr = this.expression();
       body.push(expr);
       this.next();
-      if (this.peek().literal === ';') {
-        this.eat(';');
+      if (this.peek().literal === ";") {
+        this.eat(";");
       }
       token = this.peek();
     }
-    this.eat('}');
-
-    if (body.length === 0) return this.lexer.false;
-    if (body.length === 1) return body[ 0 ];
-    return {type: Ast.Block, rule: Rule.Block, body};
+    this.eat("}");
+    switch (body.length) {
+      case 0:
+        return this.lexer.false;
+      case 1:
+        return body[0];
+      default:
+        return { type: Ast.Block, rule: Rule.Block, body };
+    }
   }
-  atom (): Expr {
+  atom(): Expr {
     return this.callish(() => {
       const token = this.peek();
-
-      if (token.validate(Type.PUNCT, '(')) {
+      if (token.validate(Type.PUNCT, ")")) {
+        this.next();
+        return this.lexer.false;
+      }
+      if (token.validate(Type.PUNCT, "(")) {
         this.next();
         const expr: Expr = this.expression();
+        // console.log(expr);
         // this.eat(')');
         return expr;
       }
-      if (token.validate(Type.PUNCT, '{')) {
+      if (token.validate(Type.PUNCT, "{")) {
         const expr = this.block();
         this.next();
         return expr;
       }
-      if (token.validate(Type.KW, 'let')) {
-        // SHOULD BECOME VARIABLE DEF NODE LATER
-        this.eat('let');
-        return this.assign();
+      if (token.validate(Type.KW, 'if')) {
+        return this.conditional();
       }
-      if (token.validate(Type.KW, 'true') || token.validate(Type.KW, 'false')) {
-        const value = token.value == 'true';
+      if (token.validate(Type.KW, "let")) {
+        const expr = this.variable();
+        // this.next();
+        return expr;
+      }
+      if (token.validate(Type.KW, "true", "false")) {
+        const value = token.value == "true";
         this.next();
         return this.literal(Type.BOOL, value);
       }
-      if (token.validate(Type.PUNCT, '|')) {
+      if (token.validate(Type.PUNCT, "|")) {
         const expr: Expr = this.lambda();
         this.next();
         // TODO: check for apply?
         return expr;
       }
-
-      if (token.type === Type.NUM || token.type === Type.STR || token.type === Type.SYM) {
+      if (
+        token.type === Type.NUM || token.type === Type.STR ||
+        token.type === Type.SYM
+      ) {
         this.next();
         return token;
       }
-
-      throw this.error("Unable to parse " + JSON.stringify(token._json(), null, 2));
+      throw this.error(
+        "Unable to parse " + JSON.stringify(token._json(), null, 2),
+      );
       // return token;
     });
   }
-  variable() {}
-  assign (): Assign | Expr {
-    return this.binary(this.or, Rule.Assign, '=');
+  assign(): Assign | Expr {
+    return this.binary(this.or, Rule.Assign, "=");
   }
-  binary (parser: () => Expr, rule: Rule, ...ops: string[]): Expr {
-    // since we may lose context as we pass parsers around, we call the parser using the prototype's call method
+  binary(parser: () => Expr, rule: Rule, ...ops: string[]): Expr {
+    // since we may lose context as we pass parsers around
     let expr: Expr = parser.call(this);
     let token = this.peek();
     while (token.validate(Type.OP, ...ops)) {
       this.next();
-      const right = parser.call(this);
-      expr = { type: Ast.Binary, rule, operator: token.literal, left: expr, right };
+      expr = {
+        type: Ast.Binary,
+        rule,
+        operator: token.literal,
+        left: expr,
+        right: parser.call(this),
+      };
       token = this.peek();
     }
     return expr;
   }
-  or (): Expr { return this.binary(this.and, Rule.Or, '||'); }
-  and (): Expr { return this.binary(this.equality, Rule.And, '&&'); }
-  equality (): Expr { return this.binary(this.compare, Rule.Equality, '==', '!='); }
-  compare (): Expr { return this.binary(this.term, Rule.Compare, '<', '<=', '>', '>='); }
-  term (): Expr { return this.binary(this.factor, Rule.Term, '+', '-'); }
-  factor (): Expr { return this.binary(this.unary, Rule.Factor, '*', '/', '%'); }
-  unary (): Expr {
+  or(): Expr {
+    return this.binary(this.and, Rule.Or, "||");
+  }
+  and(): Expr {
+    return this.binary(this.equality, Rule.And, "&&");
+  }
+  equality(): Expr {
+    return this.binary(this.compare, Rule.Equality, "==", "!=");
+  }
+  compare(): Expr {
+    return this.binary(this.term, Rule.Compare, "<", "<=", ">", ">=");
+  }
+  term(): Expr {
+    return this.binary(this.factor, Rule.Term, "+", "-");
+  }
+  factor(): Expr {
+    return this.binary(this.unary, Rule.Factor, "*", "/", "%");
+  }
+  unary(): Expr {
     const token = this.peek();
-    if (token.validate(Type.OP, '!', '-')) {
+    if (token.validate(Type.OP, "~", "-")) {
       this.next();
       const right = this.unary();
-      return { type: Ast.Unary, rule: Rule.Unary, operator: token.literal, right };
+      return {
+        type: Ast.Unary,
+        rule: Rule.Unary,
+        operator: token.literal,
+        right,
+      };
     }
     return this.atom();
   }
-  literal (type: Type, value: number | string | boolean): Literal {
+  literal(type: Type, value: number | string | boolean): Literal {
     return { type, rule: Rule.Literal, value };
   }
 }
 
-export function parse (program: string) {
+export function parse(program: string) {
   return new Parser(program).parse();
 }

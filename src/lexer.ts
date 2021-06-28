@@ -1,9 +1,9 @@
-import { Stream } from './stream.ts';
-import { Type, KW, Token, Lexeme, Prim } from './token.ts';
-export { Type, Token } from './token.ts';
+import { Stream } from "./stream.ts";
+import { KW, Lexeme, Prim, Token, Type } from "./token.ts";
+export { Token, Type } from "./token.ts";
 /**
  * Generates a stream of tokens from a given string input. Upon completion of stream, all following token value calls will return `null`.
- * 
+ *
  * Peek to see what we'd consume
  * PeekNext see next token
  * Next to update stream position
@@ -11,35 +11,35 @@ export { Type, Token } from './token.ts';
 export class Lexer {
   stream: Stream;
   private current: Token | null = null;
-  constructor (source: string | Stream) {
+  constructor(source: string | Stream) {
     if (source instanceof Stream) this.stream = source;
     else this.stream = new Stream(source);
   }
-  get false () {
-    return this.token(Type.BOOL, false, '<FALSE>')
+  get false() {
+    return this.token(Type.BOOL, false, "<FALSE>");
   }
   // state methods
-  error (message: string) {
+  error(message: string) {
     this.stream.error(message);
   }
-  peek () {
-    return this.current || (this.current = this.peekNext());
+  peek() {
+    return this.current ?? (this.current = this.peekNext());
   }
-  next () {
+  next() {
     const token = this.current;
     this.current = null;
-    return token || this.peekNext();
+    return token ?? this.peekNext();
   }
-  eof () {
+  eof() {
     return this.peek().type === Type.EOF;
   }
-  pos () {
+  pos() {
     return { line: this.stream.line, col: this.stream.col };
   }
-  peekNext (): Token {
+  peekNext(): Token {
     this.eatWhile(isSpace);
 
-    if (this.stream.eof()) return this.token(Type.EOF, '\\0');
+    if (this.stream.eof()) return this.token(Type.EOF, "\\0");
 
     const char = this.stream.peek();
 
@@ -58,10 +58,11 @@ export class Lexer {
         return this.word();
 
       case isPunct(char):
-        if (char == '|' && this.stream.after() == '|')
+        if (char == "|" && this.stream.after() == "|") {
           return this.operator();
-        else
+        } else {
           return this.punct();
+        }
 
       case isOperator(char):
         return this.operator();
@@ -70,17 +71,18 @@ export class Lexer {
         throw this.error("Unable to tokenize " + char);
     }
   }
-  token (type: Type, value: Prim, literal?: string) {
+
+  //
+  token(type: Type, value: Prim, literal?: string) {
     return new Token(type, value, this.pos(), literal);
   }
 
-  // consumption methods
   // TODO: add support for bases 2, 8, 16
-  private number () {
+  private number() {
     let infixed = false;
     // let base: number;
     const number = this.eatWhile((c) => {
-      if (c == '.') {
+      if (c == ".") {
         if (infixed) return false;
         infixed = true;
         return true;
@@ -89,45 +91,45 @@ export class Lexer {
     });
     return this.token(Type.NUM, parseFloat(number), number);
   }
-  private string () {
+  private string() {
     const string = this.escaped('"');
     return this.token(Type.STR, string);
   }
-  private word () {
+  private word() {
     const word = this.eatWhile(isWord);
     return this.token(isKeyword(word) ? Type.KW : Type.SYM, word);
   }
-  private comment () {
-    if (this.stream.after() == '~')
-      this.eatWhile((c) => c != '\n');
-    else {
+  private comment() {
+    if (this.stream.after() == "~") {
+      this.eatWhile((c) => c != "\n");
+    } else {
       let penult = false;
-      this.eatWhile(c => {
-        if (penult)
-          if (c == '~') return false;
+      this.eatWhile((c) => {
+        if (penult) {
+          if (c == "~") return false;
           else penult = false;
-        else if (c == '*') penult = true;
+        } else if (c == "*") penult = true;
         return true;
       });
     }
     this.stream.next();
   }
-  private punct () {
+  private punct() {
     return this.token(Type.PUNCT, this.stream.next());
   }
-  private operator () {
+  private operator() {
     return this.token(Type.OP, this.eatWhile(isOperator));
   }
 
   // modulating consumption of tokens
-  private escaped (terminal: string) {
-    let escaped = false, match = '';
+  private escaped(terminal: string) {
+    let escaped = false, match = "";
     this.stream.next();
     while (!this.stream.eof()) {
       const c = this.stream.next();
       if (escaped) {
         match += c, escaped = false;
-      } else if (c == '\\') {
+      } else if (c == "\\") {
         escaped = true;
       } else if (c == terminal) {
         break;
@@ -137,8 +139,8 @@ export class Lexer {
     }
     return match;
   }
-  private eatWhile (charPred: (ch: string) => boolean) {
-    let word = '';
+  private eatWhile(charPred: (ch: string) => boolean) {
+    let word = "";
     while (!this.stream.eof() && charPred(this.stream.peek())) {
       word += this.stream.next();
     }
@@ -147,29 +149,29 @@ export class Lexer {
 }
 
 // pattern matching utils as functions instead of static methods
-function isKeyword (word: string) {
-  return KW.indexOf(` ${ word } `) > -1;
+function isKeyword(word: string) {
+  return KW.indexOf(word) > -1;
 }
-function isSpace (char: string) {
+function isSpace(char: string) {
   return /\s/.test(char);
 }
-function isDigit (char: string) {
+function isDigit(char: string) {
   return /[0-9]/i.test(char);
 }
-function isOperator (char: string) {
+function isOperator(char: string) {
   return "=&|<>!+-*/^%".indexOf(char) > -1;
 }
-function startsWord (char: string) {
+function startsWord(char: string) {
   return /[a-z_\:]/i.test(char);
 }
-function isWord (word: string) {
+function isWord(word: string) {
   return startsWord(word) || /[a-z\d]/i.test(word);
 }
-function isPunct (char: string) {
+function isPunct(char: string) {
   return ",;()[]{}|".indexOf(char) > -1;
 }
-function isComment (left: string, right: string) {
-  return " ~~ ~* ".indexOf(' ' + left + right + ' ') > -1;
+function isComment(left: string, right: string) {
+  return " ~~ ~* ".indexOf(" " + left + right + " ") > -1;
 }
 
-export default { Type, Token, Lexer };
+// export default { Type, Token, Lexer };
