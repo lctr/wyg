@@ -1,42 +1,35 @@
-import { Stream } from "./stream.ts";
+import { Streamable, Stream } from "./stream.ts";
 import { KW, Lexeme, Prim, Token, Type } from "./token.ts";
 export { Token, Type } from "./token.ts";
-/**
- * Generates a stream of tokens from a given string input. Upon completion of stream, all following token value calls will return `null`.
- *
- * Peek to see what we'd consume
- * PeekNext see next token
- * Next to update stream position
- */
-export class Lexer {
+
+export class Lexer implements Streamable<Token> {
   stream: Stream;
   private current: Token | null = null;
-  constructor(source: string | Stream) {
-    if (source instanceof Stream) this.stream = source;
-    else this.stream = new Stream(source);
+  constructor (source: string | Stream) {
+    this.stream = (source instanceof Stream) ? source : new Stream(source);
   }
-  get false() {
+  get false () {
     return this.token(Type.BOOL, false, "<FALSE>");
   }
   // state methods
-  error(message: string) {
+  error (message: string) {
     this.stream.error(message);
   }
-  peek() {
-    return this.current ?? (this.current = this.peekNext());
+  peek () {
+    return this.current ?? (this.current = this.after());
   }
-  next() {
+  next () {
     const token = this.current;
     this.current = null;
-    return token ?? this.peekNext();
+    return token ?? this.after();
   }
-  eof() {
+  eof () {
     return this.peek().type === Type.EOF;
   }
-  pos() {
+  pos () {
     return { line: this.stream.line, col: this.stream.col };
   }
-  peekNext(): Token {
+  after (): Token {
     this.eatWhile(isSpace);
 
     if (this.stream.eof()) return this.token(Type.EOF, "\\0");
@@ -46,7 +39,7 @@ export class Lexer {
     switch (true) {
       case isComment(char, this.stream.after()):
         this.comment();
-        return this.peekNext();
+        return this.after();
 
       case (char == '"'):
         return this.string();
@@ -73,12 +66,12 @@ export class Lexer {
   }
 
   //
-  token(type: Type, value: Prim, literal?: string) {
+  token (type: Type, value: Prim, literal?: string) {
     return new Token(type, value, this.pos(), literal);
   }
 
   // TODO: add support for bases 2, 8, 16
-  private number() {
+  private number () {
     let infixed = false;
     // let base: number;
     const number = this.eatWhile((c) => {
@@ -91,15 +84,15 @@ export class Lexer {
     });
     return this.token(Type.NUM, parseFloat(number), number);
   }
-  private string() {
+  private string () {
     const string = this.escaped('"');
     return this.token(Type.STR, string);
   }
-  private word() {
+  private word () {
     const word = this.eatWhile(isWord);
     return this.token(isKeyword(word) ? Type.KW : Type.SYM, word);
   }
-  private comment() {
+  private comment () {
     if (this.stream.after() == "~") {
       this.eatWhile((c) => c != "\n");
     } else {
@@ -114,15 +107,15 @@ export class Lexer {
     }
     this.stream.next();
   }
-  private punct() {
+  private punct () {
     return this.token(Type.PUNCT, this.stream.next());
   }
-  private operator() {
+  private operator () {
     return this.token(Type.OP, this.eatWhile(isOperator));
   }
 
   // modulating consumption of tokens
-  private escaped(terminal: string) {
+  private escaped (terminal: string) {
     let escaped = false, match = "";
     this.stream.next();
     while (!this.stream.eof()) {
@@ -139,7 +132,7 @@ export class Lexer {
     }
     return match;
   }
-  private eatWhile(charPred: (ch: string) => boolean) {
+  private eatWhile (charPred: (ch: string) => boolean) {
     let word = "";
     while (!this.stream.eof() && charPred(this.stream.peek())) {
       word += this.stream.next();
@@ -149,28 +142,28 @@ export class Lexer {
 }
 
 // pattern matching utils as functions instead of static methods
-function isKeyword(word: string) {
+function isKeyword (word: string) {
   return KW.indexOf(word) > -1;
 }
-function isSpace(char: string) {
+function isSpace (char: string) {
   return /\s/.test(char);
 }
-function isDigit(char: string) {
+function isDigit (char: string) {
   return /[0-9]/i.test(char);
 }
-function isOperator(char: string) {
+function isOperator (char: string) {
   return "=&|<>!+-*/^%".indexOf(char) > -1;
 }
-function startsWord(char: string) {
+function startsWord (char: string) {
   return /[a-z_\:]/i.test(char);
 }
-function isWord(word: string) {
+function isWord (word: string) {
   return startsWord(word) || /[a-z\d]/i.test(word);
 }
-function isPunct(char: string) {
+function isPunct (char: string) {
   return ",;()[]{}|".indexOf(char) > -1;
 }
-function isComment(left: string, right: string) {
+function isComment (left: string, right: string) {
   return " ~~ ~* ".indexOf(" " + left + right + " ") > -1;
 }
 

@@ -1,6 +1,6 @@
-import { Token, Type } from "./token.ts";
-export { Type } from "./token.ts";
-export type { Atom, Prim } from "./token.ts";
+import { Prim, Token, Type } from "../lexing/token.ts";
+export { Type } from "../lexing/token.ts";
+export type { Atom, Prim } from "../lexing/token.ts";
 export enum Ast {
   Block = "block",
   Condition = "condition",
@@ -15,7 +15,7 @@ export enum Ast {
 export enum Rule {
   Variable = "variable",
   Call = "call",
-  Block = "sequence",
+  Block = "block",
   Condition = "condition",
   Lambda = "lambda",
   Assign = "assign",
@@ -33,16 +33,30 @@ export interface ExprBase {
   type: Ast | Type;
 }
 
-export interface BinExpr extends ExprBase {
+interface Bool {
+  type: Type.BOOL,
+  value: boolean;
+}
+
+export interface Booln<E> {
+  type: Rule.Literal;
+  rule?: Rule.Literal,
+  value: boolean;
+}
+
+export interface ExprNode extends ExprBase {
+  type: Ast,
+  rule: Rule;
+}
+
+export interface BinExpr<L, R> extends ExprNode {
   type: Ast;
   rule: Rule;
   operator: string;
-  left: Expr;
-  right: Expr;
+  left: L;
+  right: R;
 }
-export interface UnExpr extends ExprBase {
-  type: Ast;
-  rule: Rule;
+export interface UnExpr extends ExprNode {
   operator: string;
   right: Expr;
 }
@@ -50,7 +64,7 @@ export interface UnExpr extends ExprBase {
 export interface Literal extends ExprBase {
   type: Type;
   rule: Rule;
-  value: string | number | boolean;
+  value: Prim;
 }
 
 export interface Lambda extends ExprBase {
@@ -84,7 +98,7 @@ export interface Assign extends ExprBase {
   type: Ast;
   rule: Rule;
   operator: string;
-  left: { type: Type; value: string };
+  left: { type: Type; value: string; };
   right: Expr;
 }
 
@@ -95,11 +109,13 @@ export interface Block {
 }
 
 export interface Conditional {
-  type: Ast,
-  cond: Expr,
-  then: Expr,
-  else?: Expr,
+  type: Ast;
+  cond: Expr;
+  then: Expr;
+  else?: Expr;
 }
+
+type Branch<T> = T extends ExprBase ? T : Expr;
 
 export type Expr =
   | Block
@@ -108,7 +124,21 @@ export type Expr =
   | Variable
   | Call
   | Assign
-  | BinExpr
+  | BinExpr<Expr, Expr>
   | UnExpr
   | Literal
   | Token;
+
+type Keys<T> = { [ P in keyof T ]: T[ P ] };
+
+export class Expression<T extends ExprBase> implements ExprBase {
+  type!: Ast | Type;
+  constructor (
+    node: T,
+  ) {
+    Object.assign(this, node);
+  }
+  [ Deno.customInspect ] () {
+    Deno.inspect(this, { depth: 15 });
+  }
+}
