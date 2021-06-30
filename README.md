@@ -2,21 +2,22 @@
 
 [WIP]
 
-Wyg (_/wɪg/_): A high-level scripting language taking advantage of the TS
-runtime provided by Deno with no dependencies outside of the Deno std library.
+Wyg (_/wɪg/_): A high-level scripting language taking advantage of the TypeScript runtime provided by Deno with no dependencies outside of the Deno std library.
 Wyg would like to be usable, but is primarily an excursion in language design.
 
 ## Overview
 
-Everything in Wyg tries to be an expression.
+Everything in Wyg tries to be an expression. Most things so far are S-expressions, as Wyg was inspired by Rust with a Lisp.
 
 ### Comments
 
-Line comments are prefixed with `~~`, while block comments are prefixed with
-`~*` and postfixed with `*~`.
+Line comments are prefixed with `~~`, while block comments are prefixed with `~*` and postfixed with `*~`.
 
 ```
 ~~ this is a line comment
+~~> it makes for a squiggly arrow
+~~: or any other arbitrary comment delimiter/bullet 
+~~~ anything after `~~` in the same line is ignored
 ```
 
 ```
@@ -27,24 +28,34 @@ Line comments are prefixed with `~~`, while block comments are prefixed with
 
 ### Lambdas
 
-Lambda notation was inspired by Rust with a slight Lisp. Since lambdas are
-anonymous functions, it follows that lambdas are written as such.
+Since lambdas are anonymous functions, it follows that lambdas are written as such. Lambda expressions syntactically are followed by either a standalone *expression*, or a *body*, defined as the expression whose value is defined by the **last** expression in a sequence of contained expressions.
+
 
 ```
 ~~ this lambda takes the sum of two elements
 (|a, b| a + b);
+
+~~ and is applied by wrapping it with its arguments
+((|a, b| a + b) (1, 2));  ~~> 3
+
+~~ since lambdas can get gnarly
+((|a, b| let (c = a + b) 2 * c) (1, 2)); ~~> 6
+
+~~ a `let` binding is syntactic sugar for lambda closures
+let (sum = (|a, b| a + b)) sum (1, 2);  ~~> 3
 ```
 
 Otherwise, lambda parameters are followed by a body -- a sequence of expressions
 -- enclosed in curly braces `{`, `}` with each sequential expression delimited
-by a semicolon `;`.
+by a semicolon `;`. Notice that 
 
 ```
 (|a, b| {
-  let x = 0; 
-  a + b > x
+  let (x = 0) a + b > x
 });
 ```
+
+
 
 # TODO
 Certain items are premarked 
