@@ -22,7 +22,6 @@ class Feed {
   constructor () { }
 }
 
-
 export class Parser {
   lexer: Lexer;
   tokens: Token[] = [];
@@ -65,8 +64,6 @@ export class Parser {
     }
     return { type: Ast.Block, rule: Rule.Block, body };
   }
-  // handler for group
-  //
   expression (): Expr {
     return this.callish(() => this.group(this.atom));
   }
@@ -78,7 +75,17 @@ export class Parser {
       return parser.call(this);
     }
   }
-  // identifies a `call` node after a parser expression
+  /**
+   * Identify a `call` node after a parser expression, applying the method `Parser.call` instance method if not a `CALL` node, and a `CALL` node otherwise. 
+   * Note: This has to do with the following production rule: 
+   * ```
+   * Expr   -> Call | Expr
+   * Call   -> Expr <PUNCT> (Exprs)* <PUNCT>
+   * Exprs  -> Expr (<PUNCT> Expr)+ | Expr
+   * ```
+   * @param parser `Parser` instance method to be used for parsing the non-call expression.
+   * @returns {Expr} Expression node.
+   */
   callish (parser: () => Expr): Expr {
     const expr: Expr = parser.call(this);
     const token = this.peek();
@@ -196,14 +203,10 @@ export class Parser {
   atom (): Expr {
     return this.callish(() => {
       let token = this.peek();
-      if (token.validate(Type.PUNCT, ")")) {
-        this.next();
-        return this.lexer.false;
-      }
       if (token.validate(Type.PUNCT, "(")) {
         this.next();
         const expr: Expr = this.expression();
-        // console.log(expr);
+        // 
         // this.eat(')');
         return expr;
       }
@@ -220,11 +223,6 @@ export class Parser {
         // this.next();
         return expr;
       }
-      if (token.validate(Type.KW, "true", "false")) {
-        const value = token.value == "true";
-        this.next();
-        return this.literal(Type.BOOL, value);
-      }
       if (token.validate(Type.PUNCT, "|")) {
         const expr: Expr = this.lambda();
         this.next();
@@ -232,17 +230,13 @@ export class Parser {
         return expr;
       }
       token = this.next();
-      if (
-        token.type === Type.NUM || token.type === Type.STR ||
-        token.type === Type.SYM
-      ) {
+      if (token.typeIn(Type.BOOL, Type.NUM, Type.STR, Type.SYM)) {
         // this.next();
         return token;
       }
       throw this.error(
         "Unable to parse " + JSON.stringify(token._json(), null, 2),
       );
-      // return token;
     });
   }
   assign (): Assign | Expr {
@@ -306,5 +300,3 @@ export class Parser {
 export function parse (program: string) {
   return new Parser(program).parse();
 }
-
-
