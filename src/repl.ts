@@ -19,17 +19,17 @@ export async function read () {
   }
 }
 
-async function parseInput (line: string) {
+async function parseInput<E> (line: string) {
   switch (await line.trim()) {
     case ":q":
-      return quit(":q");
+      return await quit(":q");
     case ":q!":
       break;
     case ":s":
     case ":r":
     default:
       try {
-        return run(line);
+        return await run(line);
       } catch (e) {
         return e;
       }
@@ -52,7 +52,7 @@ export async function repl () {
 
     if (EXIT) break;
     try {
-      if (!input) console.log(Colors.yellow((input + "").trim()));
+      if (input) console.log(Colors.yellow((input + "").trim()));
     } catch (e) {
       await quit(Colors.red(e));
     }
