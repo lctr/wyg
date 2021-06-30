@@ -38,16 +38,16 @@ Since lambdas are anonymous functions, it follows that lambdas are written as su
 ~~ and is applied by wrapping it with its arguments
 ((|a, b| a + b) (1, 2));  ~~> 3
 
-~~ since lambdas can get gnarly
+~~ since lambdas can get gnarly, we can opt to use a `let` expression
 ((|a, b| let (c = a + b) 2 * c) (1, 2)); ~~> 6
 
-~~ a `let` binding is syntactic sugar for lambda closures
+~~ a `let` expression binds a value to a symbol, holds it for use from within the body of the expression, and is a form of syntactic sugar over lambda closures
 let (sum = (|a, b| a + b)) sum (1, 2);  ~~> 3
 ```
 
 Otherwise, lambda parameters are followed by a body -- a sequence of expressions
 -- enclosed in curly braces `{`, `}` with each sequential expression delimited
-by a semicolon `;`. Notice that 
+by a semicolon `;`.
 
 ```
 (|a, b| {
