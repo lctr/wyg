@@ -26,8 +26,7 @@ Line comments are prefixed with `~~`, while block comments are prefixed with
 
 ### Lambdas
 
-Lambdas come in two flavors. For a single output expression, the arrow `->`
-followed by the returned expression and `;` is accepted.
+Lambda notation was inspired by Rust with a slight Lisp. Since lambdas are anonymous functions, it follows that lambdas are written as such.
 
 ```
 ~~ this lambda takes the sum of two elements
