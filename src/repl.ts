@@ -1,16 +1,16 @@
 import { Colors } from "./printing.ts";
 import { readLines } from "https://deno.land/std@0.97.0/io/bufio.ts";
-import { run } from "./runtime.ts";
-
+import { run } from "./evaluating/runtime.ts";
 
 let EXIT = false;
 let COUNT: number | string = 0;
-const MENU = [ "q", "o", "s" ].map(s => ':' + Colors.italic(s)).join(Colors.brightBlue(' | '));
+const MENU = [ "q", "o", "s" ].map((s) => ":" + Colors.italic(s)).join(
+  Colors.brightBlue(" | "),
+);
 const HEADER = ` ${ Colors.brightRed("\\ʎ/") }yg  ~  ${ MENU }`; //${ Colors.italic(":q | :s | :r") }`;
 const PROMPT = `(${ Colors.brightBlue(++COUNT + "") })> `;
 const LEAVING = "Would you like to quit? " + Colors.brightRed("[y/N]");
-const FAREWELL = `${ Colors.italic('Goodbye!') }`;
-
+const FAREWELL = `${ Colors.italic("Goodbye!") }`;
 
 export async function read () {
   // Listen to stdin input, once a new line is entered return
@@ -34,7 +34,7 @@ async function parseInput (line: string) {
         return e;
       }
   }
-  await write(`${ Colors.red('Force') } quitting. `);
+  await write(`${ Colors.red("Force") } quitting. `);
   console.log(FAREWELL);
   Deno.exit(0);
 }
