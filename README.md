@@ -49,6 +49,7 @@ by a semicolon `;`.
 
 - [ ] Unit tests
 - [x] Add variable bindings
+- [ ] Add support for binary, octal, hex, and decimal numbers
 - [ ] Implement parsing + evaluating unary op expressions
 - [ ] Add array and hash types
 - [ ] Implement array and hash literals
