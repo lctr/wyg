@@ -3,7 +3,8 @@
 [WIP]
 
 Wyg (_/wɪg/_): A high-level scripting language taking advantage of the TS
-runtime provided by Deno with no dependencies outside of the Deno std library. Wyg would like to be usable, but is primarily an excursion in language design.
+runtime provided by Deno with no dependencies outside of the Deno std library.
+Wyg would like to be usable, but is primarily an excursion in language design.
 
 ## Overview
 
@@ -26,7 +27,8 @@ Line comments are prefixed with `~~`, while block comments are prefixed with
 
 ### Lambdas
 
-Lambda notation was inspired by Rust with a slight Lisp. Since lambdas are anonymous functions, it follows that lambdas are written as such.
+Lambda notation was inspired by Rust with a slight Lisp. Since lambdas are
+anonymous functions, it follows that lambdas are written as such.
 
 ```
 ~~ this lambda takes the sum of two elements
@@ -35,7 +37,7 @@ Lambda notation was inspired by Rust with a slight Lisp. Since lambdas are anony
 
 Otherwise, lambda parameters are followed by a body -- a sequence of expressions
 -- enclosed in curly braces `{`, `}` with each sequential expression delimited
-by a semicolon `;`. 
+by a semicolon `;`.
 
 ```
 (|a, b| {
@@ -45,16 +47,19 @@ by a semicolon `;`.
 ```
 
 # TODO
-*?* := optional.
-
+Certain items are premarked 
+**(?)** := optional or uncertain, **(!)** := food for thought.
+- [ ] Update private member fields
+- [ ] Clean up module imports/exports
 - [ ] Unit tests
 - [x] Add variable bindings
 - [ ] Add support for binary, octal, hex, and decimal numbers
 - [ ] Implement parsing + evaluating unary op expressions
+- [ ] **(!)** Implement arbitrary floating point precision
 - [ ] Add array and hash types
 - [ ] Implement array and hash literals
-- [ ] Syntactic sugar
-- [ ] Static typing (?)
+- [ ] **(!)** Syntactic sugar
+- [ ] **(?)** Static typing
 - [ ] Implement AST analyzer
 - [ ] Improve error handling
 - [ ] Code generation
