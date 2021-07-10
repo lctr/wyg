@@ -7,8 +7,8 @@ import type {
   Call,
   Conditional,
   Lambda,
-  // Literal,
-  // UnExpr,
+  Literal,
+  UnExpr,
   Variable,
 } from "../parsing/expression.ts";
 
@@ -111,9 +111,9 @@ export function evaluate (expr: Expr, env: Envr): Value {
       return env.get(expr.value as string);
     case Node.Assign:
       return evalAssign(expr as Assign, env);
+    case Node.Unary:
     case Node.Binary:
       return evalBinary(expr as BinExpr<Expr, Expr>, env);
-    // case Node.Unary:
     case Node.Lambda:
       return evalLambda(expr as Lambda, env);
     case Node.Condition:
@@ -139,7 +139,7 @@ function evalConditional (expr: Conditional, env: Envr) {
 function evalVariable (expr: Variable, env: Envr) {
   let scope: Envr = env;
   for (const arg of expr.args) {
-    scope = env.extend();
+    scope = Object.assign(scope, env.extend());
     scope.def(arg.name, arg.def ? evaluate(arg.def, env) : false);
     // console.log("evalVariable: scope ", scope);
   }
@@ -183,7 +183,7 @@ function evalLambda (expr: Lambda, env: Envr) {
   return lambda;
 }
 
-function evalBinary (expr: BinExpr<Expr, Expr>, env: Envr): number | boolean {
+function evalBinary (expr: BinExpr<Expr, Expr> | UnExpr, env: Envr): Prim {
   return evalBinaryOp(
     expr.operator,
     evaluate(expr.left, env),
@@ -191,7 +191,7 @@ function evalBinary (expr: BinExpr<Expr, Expr>, env: Envr): number | boolean {
   );
 }
 
-export function evalBinaryOp (op: string, a: Exclude<Prim, string>, b: number) {
+export function evalBinaryOp (op: string, a: Prim, b: Prim) {
   switch (op) {
     case Op.PLUS:
       return _n(a) + _n(b);
@@ -200,9 +200,9 @@ export function evalBinaryOp (op: string, a: Exclude<Prim, string>, b: number) {
     case Op.TIMES:
       return _n(a) * _n(b);
     case Op.DIV:
-      return _n(a) / _d(b);
+      return _n(a) / _d(<number> b);
     case Op.MOD:
-      return _n(a) % _d(b);
+      return _n(a) % _d(<number> b);
     case Op.AND:
       return a !== false && b;
     case Op.OR:
@@ -225,12 +225,13 @@ export function evalBinaryOp (op: string, a: Exclude<Prim, string>, b: number) {
   function _n<K> (x: K) {
     if (typeof x != "number") {
       throw new TypeError("Expected a number, but got " + x);
-    } else return x;
-  }
-  function _d<K> (x: K) {
-    if (_n(x) == 0) {
-      throw new EvalError("Trying to divide by zero!");
     }
     else return x;
+  }
+  function _d<K> (x: K) {
+    if (_n(x) === 0) {
+      throw new EvalError("Trying to divide by zero!");
+    }
+    else return x as K;
   }
 }
