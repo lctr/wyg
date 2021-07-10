@@ -1,4 +1,5 @@
-import { Ast, Expr, Type } from "../parsing/parser.ts";
+import { Node, Expr, Type, Op } from "../parsing/parser.ts";
+import type { Prim } from "../parsing/parser.ts";
 import type {
   Assign,
   BinExpr,
@@ -6,37 +7,40 @@ import type {
   Call,
   Conditional,
   Lambda,
-  Literal,
-  UnExpr,
+  // Literal,
+  // UnExpr,
   Variable,
 } from "../parsing/expression.ts";
 
+export type Fn = (..._: unknown[]) => unknown;
+
 // TODO: define Value type for accessing scoped values
-export type Value = any;
+export type Value = any | Prim | Fn;
 
 interface Args<T> extends Record<string, T> {
   [ t: string ]: T;
 }
 
-interface Context {
-  args?: Args<Value>;
+type Key<T> = T extends Prim ? string : string;
+
+export interface Context {
+  args?: Args<unknown>;
   parent?: Envr;
 }
 
-// when we enter a function, create a new Envr with its prototype set to that of its parent environment, evaluating the function's body in this new Envr
+// when we enter a lambda/function, we introduce closures by creating a new scope environment `Envr` with its prototype set to that of its parent environment and evaluating said function's body in the new scope environment `Envr` instance.
 export class Envr implements Context {
-  static get base () {
-    return Object.create(null);
-  }
   static interrupted: boolean;
   static message: string | Error;
   static set error (msg: string | Error) {
     this.interrupted = true;
     this.message = msg;
   }
-  args: Record<string, Expr>;
+  args: Args<unknown>;
   parent?: Envr;
-
+  /**
+   * Instantiates an `Envr` object corresponding to a level of scope. If the constructor is provided with a parent object to inherit from
+   */
   constructor ();
   constructor (parent: Envr);
   constructor (parent?: Envr) {
@@ -46,32 +50,40 @@ export class Envr implements Context {
   get ctx () {
     return this;
   }
+  get snapshot () {
+    return "(ENV)> " + Deno.inspect(this, { depth: 5 });
+  }
+  // TODO: communicate with parser/lexer to report location
   error (msg: string) {
-    throw new EvalError(msg + "\n(ENV)> " + this);
+    throw new EvalError(`${ msg }\n${ this.snapshot }`);
   }
   extend () {
     return new Envr(this);
   }
   // look up bindings along prototype chain
-  lookup (name: string) {
+  lookup<E> (name: Key<E>) {
     let scope: (Envr | undefined) = this.ctx;
     while (scope) {
+      // if the current scope's prototype has the binding as a property, we've found it
       if (Object.prototype.hasOwnProperty.call(scope.args, name)) {
         return scope;
       }
+      // otherwise, we go into the parent scope and try again
       scope = scope.parent;
     }
   }
-  get (name: string) {
+  get<E> (name: Key<E>) {
     if (name in this.args) {
       return this.args[ name ];
     }
-    this.error("<GET-ERROR>: Undefined variable " + name);
+    this.error("Cannot get undefined variable " + name);
   }
-  set (name: string, value: Value) {
+  // restricting assignment
+  // TODO: narrow down assignment not only to \subset current scope, but also to specifically mutable structures
+  set<E> (name: Key<E>, value: Value) {
     const scope = this.lookup(name);
     if (!scope && this.parent) {
-      this.error("<SET-ERROR>: Undefined variable " + name);
+      this.error("Cannot set undefined variable " + name);
     }
 
     return (scope ?? this).args[ name ] = value;
@@ -81,7 +93,13 @@ export class Envr implements Context {
   }
 }
 
+export type MetaChar = typeof Type.KW
+  | typeof Type.OP
+  | typeof Type.PUNCT
+  | typeof Type.EOF;
+export type Valued = Exclude<Type, MetaChar>;
 
+type Morpheme<T> = T extends Valued ? (string | number | boolean) : Node;
 
 export function evaluate (expr: Expr, env: Envr): Value {
   switch (expr.type) {
@@ -91,20 +109,20 @@ export function evaluate (expr: Expr, env: Envr): Value {
       return expr.value;
     case Type.SYM:
       return env.get(expr.value as string);
-    case Ast.Assign:
+    case Node.Assign:
       return evalAssign(expr as Assign, env);
-    case Ast.Binary:
+    case Node.Binary:
       return evalBinary(expr as BinExpr<Expr, Expr>, env);
-    // case Ast.Unary:
-    case Ast.Lambda:
+    // case Node.Unary:
+    case Node.Lambda:
       return evalLambda(expr as Lambda, env);
-    case Ast.Condition:
+    case Node.Condition:
       return evalConditional(expr as Conditional, env);
-    case Ast.Block:
+    case Node.Block:
       return evalBlock(expr as Block, env);
-    case Ast.Call:
+    case Node.Call:
       return evalCall(expr as Call, env);
-    case Ast.Variable:
+    case Node.Variable:
       return evalVariable(expr as Variable, env);
     default:
       throw new Error("Unable to evaluate " + JSON.stringify(expr, null, 2));
@@ -123,7 +141,7 @@ function evalVariable (expr: Variable, env: Envr) {
   for (const arg of expr.args) {
     scope = env.extend();
     scope.def(arg.name, arg.def ? evaluate(arg.def, env) : false);
-    console.log("evalVariable: scope ", scope);
+    // console.log("evalVariable: scope ", scope);
   }
   return evaluate(expr.body, scope);
 }
@@ -138,7 +156,7 @@ function evalAssign (expr: Assign, env: Envr) {
 }
 
 function evalBlock (expr: Block, env: Envr) {
-  let result = false;
+  let result: Value = false;
   for (const arg of expr.body) {
     result = evaluate(arg, env);
   }
@@ -173,33 +191,33 @@ function evalBinary (expr: BinExpr<Expr, Expr>, env: Envr): number | boolean {
   );
 }
 
-function evalBinaryOp (op: string, a: number | boolean, b: number) {
+export function evalBinaryOp (op: string, a: Exclude<Prim, string>, b: number) {
   switch (op) {
-    case "+":
+    case Op.PLUS:
       return _n(a) + _n(b);
-    case "-":
+    case Op.MINUS:
       return _n(a) - _n(b);
-    case "*":
+    case Op.TIMES:
       return _n(a) * _n(b);
-    case "/":
+    case Op.DIV:
       return _n(a) / _d(b);
-    case "%":
+    case Op.MOD:
       return _n(a) % _d(b);
-    case "&&":
+    case Op.AND:
       return a !== false && b;
-    case "||":
+    case Op.OR:
       return a !== false ? a : b;
-    case "<":
+    case Op.LT:
       return _n(a) < _n(b);
-    case ">":
+    case Op.GT:
       return _n(a) > _n(b);
-    case "<=":
+    case Op.LEQ:
       return _n(a) <= _n(b);
-    case ">=":
+    case Op.GEQ:
       return _n(a) >= _n(b);
-    case "==":
+    case Op.EQ:
       return a === b;
-    case "!=":
+    case Op.NEQ:
       return a !== b;
     default:
       throw new Error("Unable to recognize operator " + op);
@@ -210,18 +228,9 @@ function evalBinaryOp (op: string, a: number | boolean, b: number) {
     } else return x;
   }
   function _d<K> (x: K) {
-    if (_n(x) == 0) throw new EvalError("Trying to divide by zero!");
+    if (_n(x) == 0) {
+      throw new EvalError("Trying to divide by zero!");
+    }
     else return x;
   }
 }
-
-const global = new Envr();
-
-global.def("print", (v: Value) => {
-  console.log(v);
-  return v;
-});
-
-global.def("time", () => new Date().valueOf);
-
-export const globalEnv = global;
