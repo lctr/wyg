@@ -1,10 +1,12 @@
-import { Streamable, Stream } from "./stream.ts";
-import { KW, Lexeme, Prim, Token, Type } from "./token.ts";
-export { Token, Type } from "./token.ts";
+import { Stream, Streamable } from "./stream.ts";
+export type { Streamable } from "./stream.ts";
+import { Comment, KW, Prim, Token, Type } from "./token.ts";
+export { Token, Type, Op } from "./token.ts";
+export type { Lexeme, Prim } from "./token.ts";
 
 export class Lexer implements Streamable<Token> {
   stream: Stream;
-  private current: Token | null = null;
+  #current: Token | null = null;
   constructor (source: string | Stream) {
     this.stream = (source instanceof Stream) ? source : new Stream(source);
   }
@@ -16,11 +18,11 @@ export class Lexer implements Streamable<Token> {
     this.stream.error(message);
   }
   peek () {
-    return this.current ?? (this.current = this.after());
+    return this.#current ?? (this.#current = this.after());
   }
   next () {
-    const token = this.current;
-    this.current = null;
+    const token = this.#current;
+    this.#current = null;
     return token ?? this.after();
   }
   eof () {
@@ -93,7 +95,7 @@ export class Lexer implements Streamable<Token> {
     return this.token(isKeyword(word) ? Type.KW : Type.SYM, word);
   }
   private comment () {
-    if (this.stream.after() == "~") {
+    if (this.stream.after() == Comment.TILDE) {
       this.eatWhile((c) => c != "\n");
     } else {
       let penult = false;
@@ -158,7 +160,7 @@ function startsWord (char: string) {
   return /[a-z_\:]/i.test(char);
 }
 function isWord (word: string) {
-  return startsWord(word) || /[a-z\d]/i.test(word);
+  return startsWord(word) || /[a-z\d']/i.test(word);
 }
 function isPunct (char: string) {
   return ",;()[]{}|".indexOf(char) > -1;
