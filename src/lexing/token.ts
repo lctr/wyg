@@ -1,4 +1,3 @@
-
 // lexeme kinds, used by lexer, parser, and interpreter
 export enum Type {
   KW = "KW",
@@ -13,14 +12,31 @@ export enum Type {
 
 // line comment `~~`, block comment `~* <lines> *~`
 export enum Comment {
-  TILDE = '~', STAR = '*'
+  TILDE = "~",
+  STAR = "*",
+}
+
+// string enums for operators since they pop up across (lexer,) parser and evaluator
+export enum Op {
+  DEF = "=", ASSIGN = "<-",
+  OR = "||",
+  AND = "&&",
+  EQ = "==", NEQ = "!=",
+  LT = "<", LEQ = "<=", GT = ">", GEQ = ">=",
+  PLUS = "+", MINUS = "-",
+  TIMES = "*", DIV = "/", MOD = "%",
+  // unary operators
+  NEG = "-", NOT = "!"
+}
+
+
+export enum Kw {
+  LET = "let", IF = "if", THEN = "then", ELSE = "else", TRUE = "true", FALSE = "false"
 }
 
 export const KW = [ "let", "if", "then", "else", "true", "false" ];
 
 export type Prim = string | number | boolean;
-
-export type Atom<T> = Token & { value: T & Prim };
 
 export interface Position {
   line: number;
@@ -36,7 +52,7 @@ export interface Lexeme {
 
 export class Token implements Lexeme {
   literal: string;
-  constructor(
+  constructor (
     public type: Type,
     public value: Prim,
     public position: Position,
@@ -44,14 +60,22 @@ export class Token implements Lexeme {
   ) {
     if (!literal) this.literal = value + "";
     else this.literal = literal;
+    if (this.validate(Type.KW, "true", "false")) {
+      // if (type === Type.KW && /^(true|false)$/.test(value as string)) {
+      this.type = Type.BOOL;
+      this.value = value as string === "true";
+    }
+    // else if (this.typeIs(Type.KW) && (this.literal in Op)) {
+    //   this.type = Type.OP;
+    // }
   }
-  get end() {
+  get end () {
     return this.position.col + this.literal.length;
   }
-  typeIs(t: string | Type) {
+  typeIs (t: string | Type) {
     return (this.type === t);
   }
-  typeIn(...types: Type[]) {
+  typeIn (...types: Type[]) {
     for (const t of types) {
       if (this.type === t) {
         return true;
@@ -59,7 +83,7 @@ export class Token implements Lexeme {
     }
     return false;
   }
-  validate(type: Type, ...literal: string[]) {
+  validate (type: Type, ...literal: string[]) {
     if (type !== this.type) return false;
     for (const val of literal) {
       if (val === this.literal) return true;
@@ -67,14 +91,20 @@ export class Token implements Lexeme {
     return false;
   }
   // TODO: unify shape of objects shown in error logging
-  _json() {
+  _json () {
     const { line, col } = this.position;
-    return { type: Type[this.type], value: this.value, line, col };
+    return { type: Type[ this.type ], value: this.value, line, col };
     // return  //`{ type: ${ Type[ this.type ] }, value: ${ this.value }, line: ${ this.line }, col: ${ this.col } }`;
   }
-  toJSON() {
-    return `${this.type} \`${this.literal}\` @ (${this.position.line}:${this.position.col}`;
+  toJSON () {
+    return `${ this.type } \`${ this.literal }\` @ (${ this.position.line }:${ this.position.col }`;
+  }
+
+  [ Deno.customInspect ] () {
+    return 'Token ' + Deno.inspect(this._json());
   }
 }
+
+
 
 export default { Type, KW, Token };
