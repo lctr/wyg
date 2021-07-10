@@ -1,7 +1,8 @@
-import { Token, Type } from "../lexing/token.ts";
-import { Lexer } from "../lexing/lexer.ts";
+import type { Lexeme } from "../lexing/token.ts";
+import { Lexer, Type, Op } from "../lexing/lexer.ts";
+export { Op } from "../lexing/lexer.ts";
 
-import { Ast, Rule } from "./expression.ts";
+import { Node, Rule } from "./expression.ts";
 import type {
   Assign,
   Binding,
@@ -15,36 +16,33 @@ import type {
   UnExpr,
   Variable,
 } from "./expression.ts";
-export { Ast, Rule, Type } from "./expression.ts";
-export type { Expr } from "./expression.ts";
+export { Node, Rule, Type } from "./expression.ts";
+export type { Prim, Expr } from "./expression.ts";
 
-class Feed {
-  constructor () { }
-}
 
 export class Parser {
-  lexer: Lexer;
-  tokens: Token[] = [];
+  #lexer: Lexer;
+  #tokens: Lexeme[] = [];
   constructor (source: string | Lexer) {
-    this.lexer = (source instanceof Lexer) ? source : new Lexer(source);
+    this.#lexer = (source instanceof Lexer) ? source : new Lexer(source);
   }
   eof () {
-    return this.peek().type === Type.EOF;
+    return this.peek().typeIs(Type.EOF);
   }
   peek () {
-    return this.lexer.peek();
+    return this.#lexer.peek();
   }
   after () {
-    return this.lexer.after();
+    return this.#lexer.after();
   }
   next () {
-    const token = this.lexer.next();
-    if (token.type !== Type.EOF) this.tokens.push(token);
+    const token = this.#lexer.next();
+    if (!token.typeIs(Type.EOF)) this.#tokens.push(token);
     return token;
   }
   error (message: string) {
-    console.log("tokens parsed: ", this.tokens);
-    this.lexer.error(message);
+    // console.log("#tokens parsed: ", this.#tokens);
+    this.#lexer.error(message);
   }
   eat (literal: string) {
     const ch = this.peek().literal;
@@ -58,11 +56,11 @@ export class Parser {
     const body: Expr[] = [];
     while (!this.eof()) {
       body.push(this.expression());
-      if (!this.lexer.eof()) {
+      if (!this.#lexer.eof()) {
         this.eat(";");
       }
     }
-    return { type: Ast.Block, rule: Rule.Block, body };
+    return { type: Node.Block, rule: Rule.Block, body };
   }
   expression (): Expr {
     return this.callish(() => this.group(this.atom));
@@ -93,35 +91,44 @@ export class Parser {
     return token.validate(Type.PUNCT, "(") ? this.call(expr) : expr;
   }
   call (fn: Expr): Call {
-    const args = this.wrapped("(", ",", ")", this.expression);
+    const args = this.circumscribed("(", ",", ")", this.expression);
     this.next();
-    return { type: Ast.Call, rule: Rule.Call, fn, args };
+    return { type: Node.Call, rule: Rule.Call, fn, args };
   }
   conditional (): Conditional {
     this.eat("if");
     const cond = this.expression();
     if (!this.peek().validate(Type.PUNCT, "{")) this.eat("then");
     const then = this.expression();
-    const expr: Conditional = { type: Ast.Condition, cond, then };
+    const expr: Conditional = { type: Node.Condition, rule: Rule.Condition, cond, then };
     if (this.peek().validate(Type.KW, "else")) {
       this.next();
       expr.else = this.expression();
     }
     return expr;
   }
-  wrapped<E> (left: string, mid: string, right: string, parser: () => E): E[] {
+  /**
+   * Parses a sequence of #tokens according to the production rules specified by the method `parser` generic parameter, thereby restricting the `parser` parameter to have a well-defined return type. 
+   *  of ` where the array is defined by three affix parameters `prefix`, `infix`, and `suffix`.  
+   * @param prefix The string literal denoting the beginning of the sequence.
+   * @param infix The string literal delimiting expressions throughout the sequence.
+   * @param suffix The string literal denoting the end of the sequence.
+   * @param parser The parser function/method corresponding to the production rule, to be applied to each expression in the sequence.
+   * @returns An array of expressions with type corresponding to `parser` parameter return type.
+   */
+  circumscribed<E> (prefix: string, infix: string, suffix: string, parser: () => E): E[] {
     const nodes = [];
-    const done = () => this.peek().validate(Type.PUNCT, right);
+    const onRight = () => this.peek().validate(Type.PUNCT, suffix);
     let first = true;
-    this.eat(left);
+    this.eat(prefix);
     while (!this.eof()) {
-      if (done()) break;
+      if (onRight()) break;
       if (first) first = false;
-      else this.eat(mid);
-      if (done()) break;
+      else this.eat(infix);
+      if (onRight()) break;
       nodes.push(parser.call(this));
     }
-    this.eat(right);
+    this.eat(suffix);
     return nodes;
   }
   variable (): Call | Variable {
@@ -129,24 +136,24 @@ export class Parser {
 
     if (this.peek().typeIs(Type.SYM)) {
       const name = this.next().literal;
-      const defs = this.wrapped("(", ",", ")", this.binding);
+      const defs = this.circumscribed("(", ",", ")", this.binding);
       return {
-        type: Ast.Call,
+        type: Node.Call,
         rule: Rule.Call,
         fn: {
-          type: Ast.Lambda,
+          type: Node.Lambda,
           rule: Rule.Lambda,
           name,
           args: defs.map((def) => def.name),
           body: this.expression(),
         },
-        args: defs.map((def) => def.def ?? this.lexer.false),
+        args: defs.map((def) => def.def ?? this.#lexer.false),
       };
     }
     return {
-      type: Ast.Variable,
+      type: Node.Variable,
       rule: Rule.Variable,
-      args: this.wrapped("(", ",", ")", this.binding),
+      args: this.circumscribed("(", ",", ")", this.binding),
       body: this.expression(),
     };
   }
@@ -154,7 +161,7 @@ export class Parser {
     const name = this.peek().literal;
     let def!: Expr;
     this.next();
-    if (this.peek().literal == "=") {
+    if (this.peek().validate(Type.OP, Op.DEF)) {
       this.next();
       def = this.expression();
     }
@@ -187,17 +194,17 @@ export class Parser {
     } else {
       body = this.expression();
     }
-    return { type: Ast.Lambda, rule: Rule.Lambda, name, args, body };
+    return { type: Node.Lambda, rule: Rule.Lambda, name, args, body };
   }
   block (): Block | Expr {
-    const body = this.wrapped("{", ";", "}", this.expression);
+    const body = this.circumscribed("{", ";", "}", this.expression);
     switch (body.length) {
       case 0:
-        return this.lexer.false;
+        return this.#lexer.false;
       case 1:
         return body[ 0 ];
       default:
-        return { type: Ast.Block, rule: Rule.Block, body };
+        return { type: Node.Block, rule: Rule.Block, body };
     }
   }
   atom (): Expr {
@@ -206,7 +213,6 @@ export class Parser {
       if (token.validate(Type.PUNCT, "(")) {
         this.next();
         const expr: Expr = this.expression();
-        // 
         // this.eat(')');
         return expr;
       }
@@ -234,22 +240,29 @@ export class Parser {
         // this.next();
         return token;
       }
+      if (token.validate(Type.PUNCT, ';') && this.eof()) {
+        throw this.error('Unexpected end of input!');
+      }
       throw this.error(
         "Unable to parse " + JSON.stringify(token._json(), null, 2),
       );
     });
   }
   assign (): Assign | Expr {
-    return this.binary(this.or, Rule.Assign, "=");
+    return this.binary(this.or, Rule.Assign, Op.ASSIGN);
   }
-  binary (parser: () => Expr, rule: Rule, ...ops: string[]): Expr {
+  binary (
+    parser: () => Expr,
+    rule: Rule,
+    ...ops: string[]
+  ): Expr | BinExpr<Expr, Expr> {
     // since we may lose context as we pass parsers around
     let expr: Expr = parser.call(this);
     let token = this.peek();
     while (token.validate(Type.OP, ...ops)) {
       this.next();
       expr = {
-        type: Ast.Binary,
+        type: rule !== Rule.Assign ? Node.Binary : Node.Assign,
         rule,
         operator: token.literal,
         left: expr,
@@ -260,31 +273,31 @@ export class Parser {
     return expr;
   }
   or (): Expr {
-    return this.binary(this.and, Rule.Or, "||");
+    return this.binary(this.and, Rule.Or, Op.OR);
   }
   and (): Expr {
-    return this.binary(this.equality, Rule.And, "&&");
+    return this.binary(this.equality, Rule.And, Op.AND);
   }
   equality (): Expr {
-    return this.binary(this.compare, Rule.Equality, "==", "!=");
+    return this.binary(this.compare, Rule.Equality, Op.EQ, Op.NEQ);
   }
   compare (): Expr {
-    return this.binary(this.term, Rule.Compare, "<", "<=", ">", ">=");
+    return this.binary(this.term, Rule.Compare, Op.LT, Op.LEQ, Op.GT, Op.GEQ);
   }
   term (): Expr {
-    return this.binary(this.factor, Rule.Term, "+", "-");
+    return this.binary(this.factor, Rule.Term, Op.PLUS, Op.MINUS);
   }
   factor (): Expr {
-    return this.binary(this.unary, Rule.Factor, "*", "/", "%");
+    return this.binary(this.unary, Rule.Factor, Op.TIMES, Op.DIV, Op.MOD);
   }
   unary (): Expr {
     const token = this.peek();
-    if (token.validate(Type.OP, "!", "-")) {
+    if (token.validate(Type.OP, Op.NOT, Op.NEG)) {
       this.next();
       const right = this.atom();
       // if ()
       return {
-        type: Ast.Unary,
+        type: Node.Unary,
         rule: Rule.Unary,
         operator: token.literal,
         right,
