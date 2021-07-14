@@ -1,8 +1,8 @@
 export interface Streamable<T> {
   peek (): T;
-  after?(): T;
   next (): T;
   error (message: string): void;
+  after?(): T;
 }
 
 export class Stream implements Streamable<string> {
@@ -40,7 +40,7 @@ export class Stream implements Streamable<string> {
     return '^'.repeat(Math.max(1, this.pos - this.#row.lastIndexOf(' ') - 1));
   }
   error (msg: string) {
-    // Stream.streamError(this, msg);
+    // TODO: test for edge cases
     const message = `${ msg } at (${ this.line }:${ this.col })`;
     const snippet = '\n\n  ['
       + this.line + '] · '
