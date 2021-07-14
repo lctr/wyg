@@ -7,6 +7,7 @@ export type { Prim, Lexeme } from "../lexing/token.ts";
 export enum Kind {
   Block = "block",
   Condition = "condition",
+  Vector = "vector",
   Variable = "variable",
   Lambda = "lambda",
   Call = "call",
@@ -16,12 +17,6 @@ export enum Kind {
 }
 
 export enum Rule {
-  Block,
-  Variable,
-  Call,
-  Condition,
-  Lambda,
-  Assign,
   Or,
   And,
   Equality,
@@ -30,21 +25,27 @@ export enum Rule {
   Factor,
   Unary,
   Literal,
+  Block = Kind.Block,
+  Variable = Kind.Variable,
+  Call = Kind.Call,
+  Condition = Kind.Condition,
+  Lambda = Kind.Lambda,
+  Vector = Kind.Vector,
+  Assign = Kind.Assign,
 }
 
-
+/**
+ * Every Expression node 
+ */
 export interface ExprBase {
   type: Kind | Type;
 }
 
 export interface ExprNode extends ExprBase {
-  type: Kind;
-  rule: Rule;
+  rule?: Rule;
 }
 
 export interface BinExpr<L, R> extends ExprNode {
-  type: Kind;
-  rule: Rule;
   operator: string;
   left: L;
   right: R;
@@ -56,15 +57,11 @@ export interface UnExpr extends ExprNode {
   right: Expr;
 }
 
-export interface Literal extends ExprBase {
-  type: Type;
-  rule: Rule;
+export interface Literal extends ExprNode {
   value: Prim;
 }
 
-export interface Lambda extends ExprBase {
-  type: Kind;
-  rule: Rule;
+export interface Lambda extends ExprNode {
   name?: string | null;
   args: string[];
   body: Expr;
@@ -75,45 +72,38 @@ export interface Binding {
   def: Expr;
 }
 
-export interface Variable {
-  type: Kind;
-  rule: Rule;
+export interface Name extends ExprBase {
+  value: string;
+}
+
+export interface Variable extends ExprNode {
   args: Binding[];
   body: Expr;
 }
 
-export interface Call extends ExprBase {
-  type: Kind;
-  rule: Rule;
+export interface Call extends ExprNode {
   fn: Expr;
   args: Expr[];
 }
 
-export interface Name extends ExprBase {
-  type: Type;
-  value: string;
-}
-
-export interface Assign extends ExprBase {
-  type: Kind;
-  rule: Rule;
+export interface Assign extends ExprNode {
   operator: string;
   left: Name;
   right: Expr;
 }
 
-export interface Block {
-  type: Kind;
-  rule: Rule;
+export interface Block extends ExprNode {
   body: Expr[];
 }
 
-export interface Conditional {
-  type: Kind;
-  rule: Rule;
+export interface Conditional extends ExprNode {
   cond: Expr;
   then: Expr;
   else?: Expr;
+}
+
+export interface Vector extends ExprBase {
+
 }
 
 type Branch<T> = T extends ExprBase ? T : Expr;
