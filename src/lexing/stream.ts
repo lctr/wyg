@@ -13,7 +13,7 @@ export class Stream implements Streamable<string> {
   constructor (private source: string) {
     // to handle unicode chars with combining characters as 1 char if possibl
     this.source = source.normalize();
-    this.end = source.length;
+    this.end = this.source.length;
   }
   peek () {
     return this.source.charAt(this.pos);
@@ -30,10 +30,23 @@ export class Stream implements Streamable<string> {
   eof () {
     return this.peek() == "";
   }
+  get #row () {
+    return this.source.slice(this.pos - this.col, this.col);
+  }
+  get #divider () {
+    return '-'.repeat(`${ this.line }`.length + this.col + 4);
+  }
+  get #indicator () {
+    return '^'.repeat(Math.max(1, this.pos - this.#row.lastIndexOf(' ') - 1));
+  }
   error (msg: string) {
     // Stream.streamError(this, msg);
     const message = `${ msg } at (${ this.line }:${ this.col })`;
-    const snippet = `\n\n  [${ this.line }] · ${ this.source.slice(this.pos - this.col, this.col) }\n  ${ '-'.repeat((this.line + '').length + 4 + this.col) }^`;
+    const snippet = '\n\n  ['
+      + this.line + '] · '
+      + this.#row + '\n  '
+      + this.#divider
+      + this.#indicator;
 
     throw new Error(`${ message }${ snippet }`);
   }
@@ -41,25 +54,5 @@ export class Stream implements Streamable<string> {
   row () {
     return this.source.slice(this.pos - this.col, this.col);
   }
-  // static async streamError (stream: Stream, message: string) {
-  //   const { red, ii, blue0, gray } = await import("../printing.ts");
-
-  //   const indicator = [
-  //     " ".repeat(stream.col), red("^"),
-  //   ].join("");
-  //   const row = stream.source.slice(0, stream.col);
-  //   const loc = `${ ii("at") } (${ blue0(stream.line + ":" + stream.col)
-  //     })`;
-  //   const gutter = (stream.line + "   ").split("").map((_) => " ").join("");
-  //   return [
-  //     message + ", instead got " + stream.peek(),
-  //     // gutter and vert divider
-  //     "",
-  //     // line number | source code slice
-  //     " " + stream.line + "|  " + row,
-  //     // arrow pointing to stream position of source code slice
-  //     gutter + " " + indicator,
-  //     " ".repeat((indicator).length) + gray("... ") + loc,
-  //   ].join("\n");
-  // }
 }
+

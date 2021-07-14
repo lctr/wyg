@@ -4,7 +4,7 @@ export { Type } from "../lexing/token.ts";
 export type { Prim, Lexeme } from "../lexing/token.ts";
 
 // TODO: change to non-string enums, using mapped enums for external representation
-export enum Node {
+export enum Kind {
   Block = "block",
   Condition = "condition",
   Variable = "variable",
@@ -16,9 +16,9 @@ export enum Node {
 }
 
 export enum Rule {
+  Block,
   Variable,
   Call,
-  Block,
   Condition,
   Lambda,
   Assign,
@@ -34,23 +34,25 @@ export enum Rule {
 
 
 export interface ExprBase {
-  type: Node | Type;
+  type: Kind | Type;
 }
 
 export interface ExprNode extends ExprBase {
-  type: Node;
+  type: Kind;
   rule: Rule;
 }
 
 export interface BinExpr<L, R> extends ExprNode {
-  type: Node;
+  type: Kind;
   rule: Rule;
   operator: string;
   left: L;
   right: R;
 }
+
 export interface UnExpr extends ExprNode {
   operator: string;
+  left: Literal;
   right: Expr;
 }
 
@@ -61,7 +63,7 @@ export interface Literal extends ExprBase {
 }
 
 export interface Lambda extends ExprBase {
-  type: Node;
+  type: Kind;
   rule: Rule;
   name?: string | null;
   args: string[];
@@ -74,14 +76,14 @@ export interface Binding {
 }
 
 export interface Variable {
-  type: Node;
+  type: Kind;
   rule: Rule;
   args: Binding[];
   body: Expr;
 }
 
 export interface Call extends ExprBase {
-  type: Node;
+  type: Kind;
   rule: Rule;
   fn: Expr;
   args: Expr[];
@@ -93,7 +95,7 @@ export interface Name extends ExprBase {
 }
 
 export interface Assign extends ExprBase {
-  type: Node;
+  type: Kind;
   rule: Rule;
   operator: string;
   left: Name;
@@ -101,13 +103,13 @@ export interface Assign extends ExprBase {
 }
 
 export interface Block {
-  type: Node;
+  type: Kind;
   rule: Rule;
   body: Expr[];
 }
 
 export interface Conditional {
-  type: Node;
+  type: Kind;
   rule: Rule;
   cond: Expr;
   then: Expr;
@@ -133,16 +135,13 @@ export type Expr =
 
 export type Keys<T> = { [ P in keyof T ]: T[ P ] };
 
-export function $<T extends ExprBase> (expr: ExprBase): T {
-  return <T> expr;
-}
 
-export function stringify (expr: Expr) {
-  return Deno.inspect(expr, { depth: 5 });
+export function stringify (expr: Expr, depth = 5) {
+  return Deno.inspect(expr, { colors: true, depth });
 }
 
 export class Expression<T extends ExprBase> implements ExprBase {
-  type!: Node | Type;
+  type!: Kind | Type;
   constructor (
     node: T,
   ) {
@@ -151,4 +150,8 @@ export class Expression<T extends ExprBase> implements ExprBase {
   [ Deno.customInspect ] () {
     Deno.inspect(this, { depth: 15 });
   }
+}
+
+export class Ast<T> {
+
 }

@@ -1,8 +1,7 @@
-import type { Lexeme } from "../lexing/token.ts";
-import { Lexer, Type, Op } from "../lexing/lexer.ts";
-export { Op } from "../lexing/lexer.ts";
+import type { Streamable, Lexeme } from "../lexing/mod.ts";
+import { Lexer, Type, Op } from "../lexing/mod.ts";
 
-import { Node, Rule } from "./expression.ts";
+import { Kind, Rule } from "./expression.ts";
 import type {
   Assign,
   Binding,
@@ -13,16 +12,15 @@ import type {
   Expr,
   Lambda,
   Literal,
+  Prim,
   UnExpr,
   Variable,
 } from "./expression.ts";
-export { Node, Rule, Type } from "./expression.ts";
-export type { Prim, Expr } from "./expression.ts";
 
-
-export class Parser {
+export class Parser implements Streamable<Lexeme> {
   #lexer: Lexer;
   #tokens: Lexeme[] = [];
+  #expr: Expr[] = [];
   constructor (source: string | Lexer) {
     this.#lexer = (source instanceof Lexer) ? source : new Lexer(source);
   }
@@ -41,13 +39,14 @@ export class Parser {
     return token;
   }
   error (message: string) {
-    // console.log("#tokens parsed: ", this.#tokens);
+    console.log(Deno.inspect(this.#expr, { colors: true, depth: 10 }));
     this.#lexer.error(message);
   }
-  eat (literal: string) {
-    const ch = this.peek().literal;
-    if (ch !== literal) {
-      this.error(`Expected the literal ${ literal } but instead got ${ ch }`);
+  eat (chars: string) {
+    const { literal } = this.peek();
+    if (literal !== chars) {
+      this.error(
+        `Expected the literal « ${ chars } » but instead got « ${ literal } »`);
     }
     this.next();
   }
@@ -60,7 +59,7 @@ export class Parser {
         this.eat(";");
       }
     }
-    return { type: Node.Block, rule: Rule.Block, body };
+    return { type: Kind.Block, rule: Rule.Block, body };
   }
   expression (): Expr {
     return this.callish(() => this.group(this.atom));
@@ -87,20 +86,19 @@ export class Parser {
   callish (parser: () => Expr): Expr {
     const expr: Expr = parser.call(this);
     const token = this.peek();
-    // console.log(expr);
+    this.#expr.push(expr, token);
     return token.validate(Type.PUNCT, "(") ? this.call(expr) : expr;
   }
   call (fn: Expr): Call {
     const args = this.circumscribed("(", ",", ")", this.expression);
-    this.next();
-    return { type: Node.Call, rule: Rule.Call, fn, args };
+    return { type: Kind.Call, rule: Rule.Call, fn, args };
   }
   conditional (): Conditional {
     this.eat("if");
     const cond = this.expression();
     if (!this.peek().validate(Type.PUNCT, "{")) this.eat("then");
     const then = this.expression();
-    const expr: Conditional = { type: Node.Condition, rule: Rule.Condition, cond, then };
+    const expr: Conditional = { type: Kind.Condition, rule: Rule.Condition, cond, then };
     if (this.peek().validate(Type.KW, "else")) {
       this.next();
       expr.else = this.expression();
@@ -133,28 +131,30 @@ export class Parser {
   }
   variable (): Call | Variable {
     this.eat("let");
-
     if (this.peek().typeIs(Type.SYM)) {
       const name = this.next().literal;
       const defs = this.circumscribed("(", ",", ")", this.binding);
+      const body = this.expression();
       return {
-        type: Node.Call,
+        type: Kind.Call,
         rule: Rule.Call,
         fn: {
-          type: Node.Lambda,
+          type: Kind.Lambda,
           rule: Rule.Lambda,
           name,
           args: defs.map((def) => def.name),
-          body: this.expression(),
+          body,
         },
         args: defs.map((def) => def.def ?? this.#lexer.false),
       };
     }
+    const args = this.circumscribed("(", ",", ")", this.binding);
+    const body = this.expression();
     return {
-      type: Node.Variable,
+      type: Kind.Variable,
       rule: Rule.Variable,
-      args: this.circumscribed("(", ",", ")", this.binding),
-      body: this.expression(),
+      args,
+      body,
     };
   }
   binding (): Binding {
@@ -169,8 +169,10 @@ export class Parser {
   }
   lambda (): Lambda {
     let token = this.peek();
+
     const name = token.typeIs(Type.SYM) ? token.literal : null;
     if (name) this.next();
+
     this.eat("|");
     token = this.peek();
     const args = [];
@@ -178,7 +180,6 @@ export class Parser {
       if (!token.typeIs(Type.SYM)) {
         this.error("Lambda parameters must be unbound symbols!");
       }
-
       args.push(token.literal);
       this.next();
       if (this.peek().literal === ",") {
@@ -194,7 +195,7 @@ export class Parser {
     } else {
       body = this.expression();
     }
-    return { type: Node.Lambda, rule: Rule.Lambda, name, args, body };
+    return { type: Kind.Lambda, rule: Rule.Lambda, name, args, body };
   }
   block (): Block | Expr {
     const body = this.circumscribed("{", ";", "}", this.expression);
@@ -204,21 +205,24 @@ export class Parser {
       case 1:
         return body[ 0 ];
       default:
-        return { type: Node.Block, rule: Rule.Block, body };
+        return { type: Kind.Block, rule: Rule.Block, body };
     }
   }
   atom (): Expr {
     return this.callish(() => {
-      let token = this.peek();
+      const token = this.peek();
       if (token.validate(Type.PUNCT, "(")) {
         this.next();
         const expr: Expr = this.expression();
-        // this.eat(')');
+        this.eat(')');
         return expr;
+      }
+      if (token.validate(Type.OP, Op.NEG, Op.NOT)) {
+        return this.unary(token);
       }
       if (token.validate(Type.PUNCT, "{")) {
         const expr = this.block();
-        this.next();
+        // this.next();
         return expr;
       }
       if (token.validate(Type.KW, "if")) {
@@ -229,18 +233,16 @@ export class Parser {
         // this.next();
         return expr;
       }
-      if (token.validate(Type.PUNCT, "|")) {
+      if (token.validate(Type.PUNCT, '|')) {
         const expr: Expr = this.lambda();
-        this.next();
-        // TODO: check for call?
         return expr;
       }
-      token = this.next();
+
       if (token.typeIn(Type.BOOL, Type.NUM, Type.STR, Type.SYM)) {
-        // this.next();
+        this.next();
         return token;
       }
-      if (token.validate(Type.PUNCT, ';') && this.eof()) {
+      if (this.eof()) {
         throw this.error('Unexpected end of input!');
       }
       throw this.error(
@@ -262,7 +264,7 @@ export class Parser {
     while (token.validate(Type.OP, ...ops)) {
       this.next();
       expr = {
-        type: rule !== Rule.Assign ? Node.Binary : Node.Assign,
+        type: rule !== Rule.Assign ? Kind.Binary : Kind.Assign,
         rule,
         operator: token.literal,
         left: expr,
@@ -288,26 +290,25 @@ export class Parser {
     return this.binary(this.factor, Rule.Term, Op.PLUS, Op.MINUS);
   }
   factor (): Expr {
-    return this.binary(this.unary, Rule.Factor, Op.TIMES, Op.DIV, Op.MOD);
+    return this.binary(this.atom, Rule.Factor, Op.TIMES, Op.DIV, Op.MOD);
   }
-  unary (): Expr {
-    const token = this.peek();
-    if (token.validate(Type.OP, Op.NOT, Op.NEG)) {
-      this.next();
-      const right = this.atom();
-      // if ()
-      return {
-        type: Node.Unary,
-        rule: Rule.Unary,
-        operator: token.literal,
-        right,
-      };
-    }
-    return this.atom();
-  }
-  literal (type: Type, value: number | string | boolean): Literal {
+  literal (type: Type, value: Prim): Literal {
     return { type, rule: Rule.Literal, value };
   }
+  unary (token: Lexeme): UnExpr {
+    const [ type, init, operator ] = (token.literal === Op.NEG)
+      ? [ Type.NUM, 0, Op.MINUS ]
+      : [ Type.BOOL, false, Op.EQ ];
+    this.next();
+    return {
+      type: Kind.Unary,
+      rule: Rule.Unary,
+      operator,
+      left: this.literal(type, init),
+      right: this.expression()
+    };
+  }
+
 }
 
 export function parse (program: string) {

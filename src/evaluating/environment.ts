@@ -1,5 +1,6 @@
-import { Node, Expr, Type, Op } from "../parsing/parser.ts";
-import type { Prim } from "../parsing/parser.ts";
+import { Type, Op } from "../lexing/mod.ts";
+import type { Prim } from "../lexing/mod.ts";
+import { Kind } from "../parsing/mod.ts";
 import type {
   Assign,
   BinExpr,
@@ -7,24 +8,27 @@ import type {
   Call,
   Conditional,
   Lambda,
-  Literal,
+  // Literal,
   UnExpr,
   Variable,
-} from "../parsing/expression.ts";
+  Expr,
+} from "../parsing/mod.ts";
 
-export type Fn = (..._: unknown[]) => unknown;
+export type WygArgs = WygValue | (() => WygValue);
+
+export type Fn = (..._: WygArgs[]) => WygValue;
 
 // TODO: define Value type for accessing scoped values
-export type Value = any | Prim | Fn;
+export type WygValue = Prim | Fn | any;
 
-interface Args<T> extends Record<string, T> {
+export interface Args<T> extends Record<string, T> {
   [ t: string ]: T;
 }
 
-type Key<T> = T extends Prim ? string : string;
+export type Key<T> = T extends Prim ? string : string;
 
 export interface Context {
-  args?: Args<unknown>;
+  args?: Args<WygValue>;
   parent?: Envr;
 }
 
@@ -36,7 +40,7 @@ export class Envr implements Context {
     this.interrupted = true;
     this.message = msg;
   }
-  args: Args<unknown>;
+  args: Args<WygValue>;
   parent?: Envr;
   /**
    * Instantiates an `Envr` object corresponding to a level of scope. If the constructor is provided with a parent object to inherit from
@@ -61,26 +65,27 @@ export class Envr implements Context {
     return new Envr(this);
   }
   // look up bindings along prototype chain
-  lookup<E> (name: Key<E>) {
+  lookup (name: number | string) {
     let scope: (Envr | undefined) = this.ctx;
     while (scope) {
       // if the current scope's prototype has the binding as a property, we've found it
-      if (Object.prototype.hasOwnProperty.call(scope.args, name)) {
+      if (Object.prototype.hasOwnProperty.call(scope.args, name + '')) {
         return scope;
       }
       // otherwise, we go into the parent scope and try again
       scope = scope.parent;
     }
   }
-  get<E> (name: Key<E>) {
+  get (name: number | string): WygValue {
     if (name in this.args) {
-      return this.args[ name ];
+      return this.args[ name + '' ];
     }
     this.error("Cannot get undefined variable " + name);
+    return false;
   }
   // restricting assignment
   // TODO: narrow down assignment not only to \subset current scope, but also to specifically mutable structures
-  set<E> (name: Key<E>, value: Value) {
+  set<E> (name: Key<E>, value: WygValue) {
     const scope = this.lookup(name);
     if (!scope && this.parent) {
       this.error("Cannot set undefined variable " + name);
@@ -88,7 +93,7 @@ export class Envr implements Context {
 
     return (scope ?? this).args[ name ] = value;
   }
-  def (name: string, value: Value) {
+  def (name: string, value: WygValue) {
     return this.args[ name ] = value;
   }
 }
@@ -99,9 +104,9 @@ export type MetaChar = typeof Type.KW
   | typeof Type.EOF;
 export type Valued = Exclude<Type, MetaChar>;
 
-type Morpheme<T> = T extends Valued ? (string | number | boolean) : Node;
+type Morpheme<T> = T extends Valued ? (string | number | boolean) : Kind;
 
-export function evaluate (expr: Expr, env: Envr): Value {
+export function evaluate (expr: Expr, env: Envr): WygValue {
   switch (expr.type) {
     case Type.NUM:
     case Type.STR:
@@ -109,20 +114,20 @@ export function evaluate (expr: Expr, env: Envr): Value {
       return expr.value;
     case Type.SYM:
       return env.get(expr.value as string);
-    case Node.Assign:
+    case Kind.Assign:
       return evalAssign(expr as Assign, env);
-    case Node.Unary:
-    case Node.Binary:
+    case Kind.Unary:
+    case Kind.Binary:
       return evalBinary(expr as BinExpr<Expr, Expr>, env);
-    case Node.Lambda:
+    case Kind.Lambda:
       return evalLambda(expr as Lambda, env);
-    case Node.Condition:
+    case Kind.Condition:
       return evalConditional(expr as Conditional, env);
-    case Node.Block:
+    case Kind.Block:
       return evalBlock(expr as Block, env);
-    case Node.Call:
+    case Kind.Call:
       return evalCall(expr as Call, env);
-    case Node.Variable:
+    case Kind.Variable:
       return evalVariable(expr as Variable, env);
     default:
       throw new Error("Unable to evaluate " + JSON.stringify(expr, null, 2));
@@ -156,22 +161,18 @@ function evalAssign (expr: Assign, env: Envr) {
 }
 
 function evalBlock (expr: Block, env: Envr) {
-  let result: Value = false;
+  let result: WygValue = false;
   for (const arg of expr.body) {
     result = evaluate(arg, env);
   }
   return result;
 }
 function evalCall (expr: Call, env: Envr) {
-  const fn = evaluate(expr.fn, env);
+  const fn: WygValue = <Fn> evaluate(expr.fn, env);
   return fn.apply(null, expr.args.map((arg) => evaluate(arg, env), fn));
 }
 
-function evalLambda (expr: Lambda, env: Envr) {
-  if (expr.name) {
-    env = env.extend();
-    env.def(expr.name, lambda);
-  }
+function evalLambda (expr: Lambda, env: Envr): WygValue {
   function lambda () {
     const names = expr.args;
     const scope = env.extend();
@@ -180,14 +181,19 @@ function evalLambda (expr: Lambda, env: Envr) {
     }
     return evaluate(expr.body, scope);
   }
+  lambda.toString = () => `${ expr.name ? expr.name : 'Lambda' } { arity: ${ expr.args.length } }`;
+  if (expr.name) {
+    env = env.extend();
+    env.def(expr.name, lambda);
+  }
   return lambda;
 }
 
-function evalBinary (expr: BinExpr<Expr, Expr> | UnExpr, env: Envr): Prim {
+function evalBinary (expr: BinExpr<Expr, Expr> | UnExpr, env: Envr): WygValue {
   return evalBinaryOp(
     expr.operator,
-    evaluate(expr.left, env),
-    evaluate(expr.right, env),
+    <Prim> evaluate(expr.left, env),
+    <Prim> evaluate(expr.right, env),
   );
 }
 

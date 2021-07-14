@@ -1,135 +1,61 @@
-import { Type } from "../lexing/token.ts";
-import { Expr, Ast, Assign, BinExpr, Lambda, Conditional, Block, Call, Variable } from "../parsing/expression.ts";
-import { Envr, Value } from "./environment.ts";
+import { Type, Op } from "../lexing/mod.ts";
+import { Prim } from "../lexing/mod.ts";
+import { Kind, parse, stringify } from "../parsing/mod.ts";
+import type {
+  Assign,
+  BinExpr,
+  Block,
+  Call,
+  Conditional,
+  Lambda,
+  Literal,
+  // UnExpr,
+  Variable,
+  Expr,
+  Name,
+} from "../parsing/mod.ts";
+import { Envr, evalBinaryOp } from "./environment.ts";
+import type { WygValue } from "./environment.ts";
+// The end of the prototype chain for the scope(s) to come
 
-export function evaluate (expr: Expr, env: Envr): Value {
+type Continuation = (...args: unknown[]) => WygValue;
+type Key = keyof Prim;
+
+
+function evaluate (expr: Expr, env: Envr, ctn: Continuation) {
   switch (expr.type) {
+    case Type.BOOL:
     case Type.NUM:
     case Type.STR:
-    case Type.BOOL:
-      return expr.value;
+      ctn(expr.value);
+      return;
     case Type.SYM:
-      return env.get(expr.value as string);
-    case Ast.Assign:
-      return evalAssign(expr as Assign, env);
-    case Ast.Binary:
-      return evalBinary(expr as BinExpr<Expr, Expr>, env);
-    // case Ast.Unary:
-    case Ast.Lambda:
-      return evalLambda(expr as Lambda, env);
-    case Ast.Condition:
-      return evalConditional(expr as Conditional, env);
-    case Ast.Block:
-      return evalBlock(expr as Block, env);
-    case Ast.Call:
-      return evalCall(expr as Call, env);
-    case Ast.Variable:
-      return evalVariable(expr as Variable, env);
-    default:
-      throw new Error("Unable to evaluate " + JSON.stringify(expr, null, 2));
+      ctn(env.get(<keyof Prim> expr.value));
+      return;
+    case Kind.Assign:
+      evalAssign(<Assign> expr, env, ctn);
+      return;
+    case Kind.Binary:
+      evalBinary(<BinExpr<Expr, Expr>> expr, env, ctn);
+      return;
+
   }
 }
 
-function evalConditional (expr: Conditional, env: Envr) {
-  if (evaluate(expr.cond, env) !== false) {
-    return evaluate(expr.then, env);
-  }
-  return expr.else ? evaluate(expr.else, env) : false;
+function applyOp (op: string, left: Expr, right: Expr) {
+
 }
 
-function evalVariable (expr: Variable, env: Envr) {
-  let scope: Envr = env;
-  for (const arg of expr.args) {
-    scope = env.extend();
-    scope.def(arg.name, arg.def ? evaluate(arg.def, env) : false);
-    console.log("evalVariable: scope ", scope);
-  }
-  return evaluate(expr.body, scope);
-}
-
-function evalAssign (expr: Assign, env: Envr) {
+function evalAssign (expr: BinExpr<Name, Expr>, env: Envr, ctn: Continuation) {
   if (expr.left.type != Type.SYM) {
-    throw new TypeError(
-      "Cannot assign to the non-variable " + JSON.stringify(expr.left, null, 2),
-    );
+    throw new Error(`Cannot assign to ${ stringify(expr.left) }`);
   }
-  return env.set(expr.left.value, evaluate(expr.right, env));
+  evaluate(expr.right, env, right => ctn(env.set(expr.left.value, right)));
+  return;
 }
-
-function evalBlock (expr: Block, env: Envr) {
-  let result = false;
-  for (const arg of expr.body) {
-    result = evaluate(arg, env);
-  }
-  return result;
-}
-function evalCall (expr: Call, env: Envr) {
-  const fn = evaluate(expr.fn, env);
-  return fn.apply(null, expr.args.map((arg) => evaluate(arg, env), fn));
-}
-
-function evalLambda (expr: Lambda, env: Envr) {
-  if (expr.name) {
-    env = env.extend();
-    env.def(expr.name, lambda);
-  }
-  function lambda () {
-    const names = expr.args;
-    const scope = env.extend();
-    for (let i = 0; i < names.length; ++i) {
-      scope.def(names[ i ], i < arguments.length ? arguments[ i ] : false);
-    }
-    return evaluate(expr.body, scope);
-  }
-  return lambda;
-}
-
-function evalBinary (expr: BinExpr<Expr, Expr>, env: Envr): number | boolean {
-  return evalBinaryOp(
-    expr.operator,
-    evaluate(expr.left, env),
-    evaluate(expr.right, env),
-  );
-}
-
-function evalBinaryOp (op: string, a: number | boolean, b: number) {
-  switch (op) {
-    case "+":
-      return _n(a) + _n(b);
-    case "-":
-      return _n(a) - _n(b);
-    case "*":
-      return _n(a) * _n(b);
-    case "/":
-      return _n(a) / _d(b);
-    case "%":
-      return _n(a) % _d(b);
-    case "&&":
-      return a !== false && b;
-    case "||":
-      return a !== false ? a : b;
-    case "<":
-      return _n(a) < _n(b);
-    case ">":
-      return _n(a) > _n(b);
-    case "<=":
-      return _n(a) <= _n(b);
-    case ">=":
-      return _n(a) >= _n(b);
-    case "==":
-      return a === b;
-    case "!=":
-      return a !== b;
-    default:
-      throw new Error("Unable to recognize operator " + op);
-  }
-  function _n<K> (x: K) {
-    if (typeof x != "number") {
-      throw new TypeError("Expected a number, but got " + x);
-    } else return x;
-  }
-  function _d<K> (x: K) {
-    if (_n(x) == 0) throw new EvalError("Trying to divide by zero!");
-    else return x;
-  }
+function evalBinary (expr: BinExpr<Expr, Expr>, env: Envr, ctn: Continuation) {
+  evaluate(expr.left, env,
+    (left: any) => evaluate(expr.right, env,
+      (right: any) => ctn(applyOp(expr.operator, left, right))));
+  return;
 }

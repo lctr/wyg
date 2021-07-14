@@ -1,7 +1,7 @@
 import { Stream, Streamable } from "./stream.ts";
 export type { Streamable } from "./stream.ts";
 import { Comment, KW, Prim, Token, Type } from "./token.ts";
-export { Token, Type, Op } from "./token.ts";
+export { Token, Type, Op, Kw } from "./token.ts";
 export type { Lexeme, Prim } from "./token.ts";
 
 export class Lexer implements Streamable<Token> {
@@ -11,7 +11,7 @@ export class Lexer implements Streamable<Token> {
     this.stream = (source instanceof Stream) ? source : new Stream(source);
   }
   get false () {
-    return this.token(Type.BOOL, false, "<FALSE>");
+    return this.tokenize(Type.BOOL, false, "<FALSE>");
   }
   // state methods
   error (message: string) {
@@ -34,46 +34,45 @@ export class Lexer implements Streamable<Token> {
   after (): Token {
     this.eatWhile(isSpace);
 
-    if (this.stream.eof()) return this.token(Type.EOF, "\\0");
+    if (this.stream.eof()) return this.tokenize(Type.EOF, "\\0");
 
     const char = this.stream.peek();
 
     switch (true) {
       case isComment(char, this.stream.after()):
-        this.comment();
+        this.#comment();
         return this.after();
 
       case (char == '"'):
-        return this.string();
+        return this.#string();
 
       case isDigit(char):
-        return this.number();
+        return this.#number();
 
       case startsWord(char):
-        return this.word();
+        return this.#word();
 
       case isPunct(char):
         if (char == "|" && this.stream.after() == "|") {
-          return this.operator();
+          return this.#operator();
         } else {
-          return this.punct();
+          return this.#punct();
         }
 
       case isOperator(char):
-        return this.operator();
+        return this.#operator();
 
       default:
         throw this.error("Unable to tokenize " + char);
     }
   }
 
-  //
-  token (type: Type, value: Prim, literal?: string) {
+  private tokenize (type: Type, value: Prim, literal?: string) {
     return new Token(type, value, this.pos(), literal);
   }
 
   // TODO: add support for bases 2, 8, 16
-  private number () {
+  #number () {
     let infixed = false;
     // let base: number;
     const number = this.eatWhile((c) => {
@@ -84,17 +83,17 @@ export class Lexer implements Streamable<Token> {
       }
       return isDigit(c);
     });
-    return this.token(Type.NUM, parseFloat(number), number);
+    return this.tokenize(Type.NUM, parseFloat(number), number);
   }
-  private string () {
+  #string () {
     const string = this.escaped('"');
-    return this.token(Type.STR, string);
+    return this.tokenize(Type.STR, string);
   }
-  private word () {
+  #word () {
     const word = this.eatWhile(isWord);
-    return this.token(isKeyword(word) ? Type.KW : Type.SYM, word);
+    return this.tokenize(isKeyword(word) ? Type.KW : Type.SYM, word);
   }
-  private comment () {
+  #comment () {
     if (this.stream.after() == Comment.TILDE) {
       this.eatWhile((c) => c != "\n");
     } else {
@@ -109,11 +108,11 @@ export class Lexer implements Streamable<Token> {
     }
     this.stream.next();
   }
-  private punct () {
-    return this.token(Type.PUNCT, this.stream.next());
+  #punct () {
+    return this.tokenize(Type.PUNCT, this.stream.next());
   }
-  private operator () {
-    return this.token(Type.OP, this.eatWhile(isOperator));
+  #operator () {
+    return this.tokenize(Type.OP, this.eatWhile(isOperator));
   }
 
   // modulating consumption of tokens
@@ -157,16 +156,17 @@ function isOperator (char: string) {
   return "=&|<>!+-*/^%".indexOf(char) > -1;
 }
 function startsWord (char: string) {
-  return /[a-z_\:]/i.test(char);
+  return /[\p{L}_]/ui.test(char);
 }
 function isWord (word: string) {
-  return startsWord(word) || /[a-z\d']/i.test(word);
+  return startsWord(word) || /[\p{L}\d']/ui.test(word);
 }
 function isPunct (char: string) {
-  return ",;()[]{}|".indexOf(char) > -1;
+  return ",;()[]{}|#".indexOf(char) > -1;
 }
 function isComment (left: string, right: string) {
   return " ~~ ~* ".indexOf(" " + left + right + " ") > -1;
 }
+
 
 // export default { Type, Token, Lexer };

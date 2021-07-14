@@ -34,7 +34,9 @@ export enum Kw {
   LET = "let", IF = "if", THEN = "then", ELSE = "else", TRUE = "true", FALSE = "false"
 }
 
-export const KW = [ "let", "if", "then", "else", "true", "false" ];
+export const KW = [ "let", "if", "then", "else", "true", "false",
+  // type names  
+  "Number", "String", "Closure", "List", "Tuple" ];
 
 export type Prim = string | number | boolean;
 
@@ -65,9 +67,6 @@ export class Token implements Lexeme {
       this.type = Type.BOOL;
       this.value = value as string === "true";
     }
-    // else if (this.typeIs(Type.KW) && (this.literal in Op)) {
-    //   this.type = Type.OP;
-    // }
   }
   get end () {
     return this.position.col + this.literal.length;
@@ -83,7 +82,9 @@ export class Token implements Lexeme {
     }
     return false;
   }
-  validate (type: Type, ...literal: string[]) {
+  validate (...literal: string[]): boolean;
+  validate (type: Type, ...literal: string[]): boolean {
+    if (!type) for (const val of literal) if (val === this.literal) return true;
     if (type !== this.type) return false;
     for (const val of literal) {
       if (val === this.literal) return true;
@@ -101,10 +102,10 @@ export class Token implements Lexeme {
   }
 
   [ Deno.customInspect ] () {
-    return 'Token ' + Deno.inspect(this._json());
+    return 'Token:' + this.type + ' { value: ' + this.value + ', (' + this.position.line + ':' + this.position.col + ') }';
   }
 }
 
 
 
-export default { Type, KW, Token };
+export default { Type, Comment, Op, KW, Token };
