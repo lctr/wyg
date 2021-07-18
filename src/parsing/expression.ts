@@ -1,6 +1,6 @@
-import { Type } from "../lexing/token.ts";
+import { Atom } from "../lexing/token.ts";
 import type { Prim, Lexeme } from "../lexing/token.ts";
-export { Type } from "../lexing/token.ts";
+export { Atom } from "../lexing/token.ts";
 export type { Prim, Lexeme } from "../lexing/token.ts";
 
 // TODO: change to non-string enums, using mapped enums for external representation
@@ -14,6 +14,7 @@ export enum Kind {
   Assign = "assign",
   Binary = "binary",
   Unary = "unary",
+  Literal = "literal"
 }
 
 export enum Rule {
@@ -25,75 +26,77 @@ export enum Rule {
   Factor,
   Unary,
   Literal,
-  Block = Kind.Block,
-  Variable = Kind.Variable,
-  Call = Kind.Call,
-  Condition = Kind.Condition,
-  Lambda = Kind.Lambda,
-  Vector = Kind.Vector,
-  Assign = Kind.Assign,
+  Block,
+  Variable,
+  Call,
+  Condition,
+  Lambda,
+  Vector,
+  Assign,
 }
 
 /**
  * Every Expression node 
  */
 export interface ExprBase {
-  type: Kind | Type;
+  type: Atom | Kind;
 }
 
 export interface ExprNode extends ExprBase {
-  rule?: Rule;
+  rule: Rule;
 }
 
 export interface BinExpr<L, R> extends ExprNode {
-  operator: string;
-  left: L;
-  right: R;
+  operator: string,
+  left: L,
+  right: R,
 }
 
 export interface UnExpr extends ExprNode {
-  operator: string;
-  left: Literal;
-  right: Expr;
+  type: Kind.Unary,
+  operator: string,
+  left: Literal,
+  right: Expr,
 }
 
 export interface Literal extends ExprNode {
-  value: Prim;
+  value: Prim,
 }
 
 export interface Lambda extends ExprNode {
-  name?: string | null;
-  args: string[];
-  body: Expr;
+  name?: string | null,
+  args: string[],
+  body: Expr,
+  arity?: number;
 }
 
 export interface Binding {
-  name: string;
-  def: Expr;
+  name: string,
+  def: Expr,
 }
 
 export interface Name extends ExprBase {
-  value: string;
+  value: string,
 }
 
 export interface Variable extends ExprNode {
-  args: Binding[];
-  body: Expr;
+  args: Binding[],
+  body: Expr,
 }
 
 export interface Call extends ExprNode {
-  fn: Expr;
-  args: Expr[];
+  fn: Expr,
+  args: Expr[],
 }
 
 export interface Assign extends ExprNode {
-  operator: string;
-  left: Name;
-  right: Expr;
+  operator: string,
+  left: Name,
+  right: Expr,
 }
 
 export interface Block extends ExprNode {
-  body: Expr[];
+  body: Expr[],
 }
 
 export interface Conditional extends ExprNode {
@@ -102,16 +105,19 @@ export interface Conditional extends ExprNode {
   else?: Expr;
 }
 
-export interface Vector extends ExprBase {
-
+export interface Vector extends ExprNode {
+  body: Expr[];
+  head: Expr,
+  tail: Expr[],
 }
 
-type Branch<T> = T extends ExprBase ? T : Expr;
-
-
+export interface List extends Vector {
+  pred: Expr[],
+}
 
 export type Expr =
   | Block
+  | Vector
   | Conditional
   | Lambda
   | Variable
@@ -122,26 +128,3 @@ export type Expr =
   | Literal
   | Lexeme
   | Name;
-
-export type Keys<T> = { [ P in keyof T ]: T[ P ] };
-
-
-export function stringify (expr: Expr, depth = 5) {
-  return Deno.inspect(expr, { colors: true, depth });
-}
-
-export class Expression<T extends ExprBase> implements ExprBase {
-  type!: Kind | Type;
-  constructor (
-    node: T,
-  ) {
-    Object.assign(this, node);
-  }
-  [ Deno.customInspect ] () {
-    Deno.inspect(this, { depth: 15 });
-  }
-}
-
-export class Ast<T> {
-
-}

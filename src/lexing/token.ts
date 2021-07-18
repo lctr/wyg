@@ -1,5 +1,5 @@
 // lexeme kinds, used by lexer, parser, and interpreter
-export enum Type {
+export enum Atom {
   KW = "KW",
   BOOL = "BOOL",
   STR = "STR",
@@ -31,10 +31,10 @@ export enum Op {
 
 
 export enum Kw {
-  LET = "let", IF = "if", THEN = "then", ELSE = "else", TRUE = "true", FALSE = "false"
+  LET = "let", IF = "if", THEN = "then", ELSE = "else", TRUE = "true", FALSE = "false", WITH = "with", IN = "in", OF = "of"
 }
 
-export const KW = [ "let", "if", "then", "else", "true", "false",
+export const KW = [ "let", "if", "then", "else", "true", "false", "with", "in", "of",
   // type names  
   "Number", "String", "Closure", "List", "Tuple" ];
 
@@ -46,7 +46,7 @@ export interface Position {
 }
 
 export interface Lexeme {
-  type: Type;
+  type: Atom;
   value: Prim;
   literal: string;
   position: Position;
@@ -55,57 +55,51 @@ export interface Lexeme {
 export class Token implements Lexeme {
   literal: string;
   constructor (
-    public type: Type,
+    public type: Atom,
     public value: Prim,
     public position: Position,
     literal?: string,
   ) {
-    if (!literal) this.literal = value + "";
-    else this.literal = literal;
-    if (this.validate(Type.KW, "true", "false")) {
-      // if (type === Type.KW && /^(true|false)$/.test(value as string)) {
-      this.type = Type.BOOL;
+    this.literal = !literal ? `${ value }` : literal;
+    if (this.validate(Atom.KW, "true", "false")) {
+      this.type = Atom.BOOL;
       this.value = value as string === "true";
     }
   }
   get end () {
     return this.position.col + this.literal.length;
   }
-  typeIs (t: string | Type) {
+  typeIs (t: string | Atom) {
     return (this.type === t);
   }
-  typeIn (...types: Type[]) {
-    for (const t of types) {
-      if (this.type === t) {
+  typeIn (...types: Atom[]) {
+    for (const t of types)
+      if (this.type === t)
         return true;
-      }
-    }
+    return false;
+  }
+  is (literal: string) {
+    for (const val of literal)
+      if (val === this.literal)
+        return true;
     return false;
   }
   validate (...literal: string[]): boolean;
-  validate (type: Type, ...literal: string[]): boolean {
-    if (!type) for (const val of literal) if (val === this.literal) return true;
-    if (type !== this.type) return false;
-    for (const val of literal) {
-      if (val === this.literal) return true;
-    }
+  validate (type: Atom, ...literal: string[]): boolean {
+    if (!type) for (const val of literal)
+      if (val === this.literal)
+        return true;
+    if (type !== this.type)
+      return false;
+    for (const val of literal)
+      if (val === this.literal)
+        return true;
     return false;
-  }
-  // TODO: unify shape of objects shown in error logging
-  _json () {
-    const { line, col } = this.position;
-    return { type: Type[ this.type ], value: this.value, line, col };
-    // return  //`{ type: ${ Type[ this.type ] }, value: ${ this.value }, line: ${ this.line }, col: ${ this.col } }`;
   }
   toJSON () {
     return `${ this.type } \`${ this.literal }\` @ (${ this.position.line }:${ this.position.col }`;
   }
-
-  [ Deno.customInspect ] () {
-    return 'Token:' + this.type + ' { value: ' + this.value + ', (' + this.position.line + ':' + this.position.col + ') }';
-  }
 }
 
 
-
-export default { Type, Comment, Op, KW, Token };
+export default { Atom, Comment, Op, KW, Token };

@@ -1,5 +1,5 @@
 import type { Streamable, Lexeme } from "../lexing/mod.ts";
-import { Lexer, Type, Op } from "../lexing/mod.ts";
+import { Lexer, Atom, Op } from "../lexing/mod.ts";
 
 import { Kind, Rule } from "./expression.ts";
 import type {
@@ -17,30 +17,20 @@ import type {
   Variable,
 } from "./expression.ts";
 
-export class Parser implements Streamable<Lexeme> {
-  #lexer: Lexer;
+export class Parser extends Lexer implements Streamable<Lexeme> {
+  // #lexer: Lexer;
   #tokens: Lexeme[] = [];
-  #expr: Expr[] = [];
+  #expr: WeakSet<Expr> = new WeakSet();
   constructor (source: string | Lexer) {
-    this.#lexer = (source instanceof Lexer) ? source : new Lexer(source);
+    super(source instanceof Lexer ? source.stream : source);
+    // this.#lexer = (source instanceof Lexer) ? source : new Lexer(source);
   }
   eof () {
-    return this.peek().typeIs(Type.EOF);
-  }
-  peek () {
-    return this.#lexer.peek();
-  }
-  after () {
-    return this.#lexer.after();
-  }
-  next () {
-    const token = this.#lexer.next();
-    if (!token.typeIs(Type.EOF)) this.#tokens.push(token);
-    return token;
+    return super.peek().typeIs(Atom.EOF);
   }
   error (message: string) {
-    console.log(Deno.inspect(this.#expr, { colors: true, depth: 10 }));
-    this.#lexer.error(message);
+    // console.log(Deno.inspect(this.#expr, { colors: true, depth: 10 }));
+    super.error(message);
   }
   eat (chars: string) {
     const { literal } = this.peek();
@@ -55,7 +45,7 @@ export class Parser implements Streamable<Lexeme> {
     const body: Expr[] = [];
     while (!this.eof()) {
       body.push(this.expression());
-      if (!this.#lexer.eof()) {
+      if (!super.eof()) {
         this.eat(";");
       }
     }
@@ -66,7 +56,7 @@ export class Parser implements Streamable<Lexeme> {
   }
   group (parser: () => Expr): Expr {
     const token = this.peek();
-    if (!token.typeIs(Type.OP)) {
+    if (!token.typeIs(Atom.OP)) {
       return this.callish(this.assign);
     } else {
       return parser.call(this);
@@ -86,8 +76,8 @@ export class Parser implements Streamable<Lexeme> {
   callish (parser: () => Expr): Expr {
     const expr: Expr = parser.call(this);
     const token = this.peek();
-    this.#expr.push(expr, token);
-    return token.validate(Type.PUNCT, "(") ? this.call(expr) : expr;
+    this.#expr.add(expr);
+    return token.validate(Atom.PUNCT, "(") ? this.call(expr) : expr;
   }
   call (fn: Expr): Call {
     const args = this.circumscribed("(", ",", ")", this.expression);
@@ -96,10 +86,10 @@ export class Parser implements Streamable<Lexeme> {
   conditional (): Conditional {
     this.eat("if");
     const cond = this.expression();
-    if (!this.peek().validate(Type.PUNCT, "{")) this.eat("then");
+    if (!this.peek().validate(Atom.PUNCT, "{")) this.eat("then");
     const then = this.expression();
     const expr: Conditional = { type: Kind.Condition, rule: Rule.Condition, cond, then };
-    if (this.peek().validate(Type.KW, "else")) {
+    if (this.peek().validate(Atom.KW, "else")) {
       this.next();
       expr.else = this.expression();
     }
@@ -114,26 +104,38 @@ export class Parser implements Streamable<Lexeme> {
    * @param parser The parser function/method corresponding to the production rule, to be applied to each expression in the sequence.
    * @returns An array of expressions with type corresponding to `parser` parameter return type.
    */
-  circumscribed<E> (prefix: string, infix: string, suffix: string, parser: () => E): E[] {
+  circumscribed<E> (
+    prefix: string,
+    infix: string,
+    suffix: string,
+    parser: () => E
+  ): E[] {
     const nodes = [];
-    const onRight = () => this.peek().validate(Type.PUNCT, suffix);
+    const end = () => this.peek().validate(Atom.PUNCT, suffix);
     let first = true;
     this.eat(prefix);
     while (!this.eof()) {
-      if (onRight()) break;
+      if (end()) break;
       if (first) first = false;
       else this.eat(infix);
-      if (onRight()) break;
+      if (end()) break;
       nodes.push(parser.call(this));
     }
     this.eat(suffix);
     return nodes;
   }
   variable (): Call | Variable {
+    const skipIn = () => {
+      if (this.peek().validate(Atom.KW, "in"))
+        this.eat("in");
+    };
     this.eat("let");
-    if (this.peek().typeIs(Type.SYM)) {
+    if (this.peek().typeIs(Atom.SYM)) {
       const name = this.next().literal;
-      const defs = this.circumscribed("(", ",", ")", this.binding);
+      let defs;
+      if (this.peek().validate(Atom.KW, "be")) { }
+      defs = this.circumscribed("(", ",", ")", this.binding);
+      skipIn();
       const body = this.expression();
       return {
         type: Kind.Call,
@@ -142,13 +144,14 @@ export class Parser implements Streamable<Lexeme> {
           type: Kind.Lambda,
           rule: Rule.Lambda,
           name,
-          args: defs.map((def) => def.name),
+          args: defs.map(({ name }) => name),
           body,
         },
-        args: defs.map((def) => def.def ?? this.#lexer.false),
+        args: defs.map(({ def }) => def ?? super.false),
       };
     }
     const args = this.circumscribed("(", ",", ")", this.binding);
+    skipIn();
     const body = this.expression();
     return {
       type: Kind.Variable,
@@ -161,28 +164,35 @@ export class Parser implements Streamable<Lexeme> {
     const name = this.peek().literal;
     let def!: Expr;
     this.next();
-    if (this.peek().validate(Type.OP, Op.DEF)) {
+    if (this.peek().validate(Atom.OP, Op.DEF)) {
       this.next();
       def = this.expression();
     }
     return { name, def };
   }
   lambda (): Lambda {
-    let token = this.peek();
 
-    const name = token.typeIs(Type.SYM) ? token.literal : null;
+    let token = this.peek();
+    const name = token.typeIs(Atom.SYM) ? token.literal : null;
     if (name) this.next();
 
     this.eat("|");
     token = this.peek();
-    const args = [];
+    const args: string[] = [];
     while (token.literal !== "|") {
-      if (!token.typeIs(Type.SYM)) {
+      if (token.validate(Atom.PUNCT, ',')) {
+        this.eat(',');
+        break;
+      }
+      if (token.typeIs(Atom.KW)) {
+        this.error("Lambda parameters may not be keywords!");
+      }
+      else if (!token.typeIs(Atom.SYM)) {
         this.error("Lambda parameters must be unbound symbols!");
       }
       args.push(token.literal);
       this.next();
-      if (this.peek().literal === ",") {
+      if (this.peek().validate(Atom.PUNCT, ",")) {
         this.eat(",");
       }
       token = this.peek();
@@ -190,55 +200,72 @@ export class Parser implements Streamable<Lexeme> {
     this.eat("|");
     let body: Expr;
     token = this.peek();
-    if (token.validate(Type.OP, "{")) {
+    if (token.validate(Atom.OP, "{")) {
       body = this.block();
     } else {
       body = this.expression();
     }
     return { type: Kind.Lambda, rule: Rule.Lambda, name, args, body };
   }
+  parameter () {
+
+  }
   block (): Block | Expr {
     const body = this.circumscribed("{", ";", "}", this.expression);
     switch (body.length) {
       case 0:
-        return this.#lexer.false;
+        return super.false;
       case 1:
         return body[ 0 ];
       default:
         return { type: Kind.Block, rule: Rule.Block, body };
     }
   }
+  // vectors correspond to 
+  vector () {
+    const body = this.circumscribed('[', ',', ']', this.expression);
+
+    return { type: Kind.Vector, rule: Rule.Vector, body };
+  }
+  list () { }
+  index () {
+    let nth;
+    if (this.peek().validate(Atom.PUNCT, '[')) {
+      nth = this.expression();
+
+    } else {
+
+    }
+  }
   atom (): Expr {
     return this.callish(() => {
       const token = this.peek();
-      if (token.validate(Type.PUNCT, "(")) {
+      if (token.validate(Atom.PUNCT, "(")) {
         this.next();
         const expr: Expr = this.expression();
         this.eat(')');
         return expr;
       }
-      if (token.validate(Type.OP, Op.NEG, Op.NOT)) {
+      if (token.validate(Atom.OP, Op.NEG, Op.NOT)) {
         return this.unary(token);
       }
-      if (token.validate(Type.PUNCT, "{")) {
-        const expr = this.block();
-        // this.next();
-        return expr;
+      if (token.validate(Atom.PUNCT, "{")) {
+        return this.block();;
       }
-      if (token.validate(Type.KW, "if")) {
+      if (token.validate(Atom.KW, "if")) {
         return this.conditional();
       }
-      if (token.validate(Type.KW, "let")) {
-        const expr = this.variable();
-        // this.next();
-        return expr;
+      if (token.validate(Atom.KW, "let")) {
+        return this.variable();
       }
-      if (token.validate(Type.PUNCT, '|')) {
-        const expr: Expr = this.lambda();
-        return expr;
+      if (token.validate(Atom.PUNCT, '|')) {
+        return this.lambda();
+      }
+      if (token.validate(Atom.PUNCT, "[")) {
+        return this.vector();
       }
 
-      if (token.typeIn(Type.BOOL, Type.NUM, Type.STR, Type.SYM)) {
+      if (token.typeIn(Atom.BOOL, Atom.NUM, Atom.STR, Atom.SYM)) {
         this.next();
         return token;
       }
@@ -246,7 +273,7 @@ export class Parser implements Streamable<Lexeme> {
         throw this.error('Unexpected end of input!');
       }
       throw this.error(
-        "Unable to parse " + JSON.stringify(token._json(), null, 2),
+        "Unable to parse " + JSON.stringify(token.toJSON(), null, 2),
       );
     });
   }
@@ -258,10 +285,10 @@ export class Parser implements Streamable<Lexeme> {
     rule: Rule,
     ...ops: string[]
   ): Expr | BinExpr<Expr, Expr> {
-    // since we may lose context as we pass parsers around
+    // since we lose context as we pass parsers around
     let expr: Expr = parser.call(this);
     let token = this.peek();
-    while (token.validate(Type.OP, ...ops)) {
+    while (token.validate(Atom.OP, ...ops)) {
       this.next();
       expr = {
         type: rule !== Rule.Assign ? Kind.Binary : Kind.Assign,
@@ -292,13 +319,14 @@ export class Parser implements Streamable<Lexeme> {
   factor (): Expr {
     return this.binary(this.atom, Rule.Factor, Op.TIMES, Op.DIV, Op.MOD);
   }
-  literal (type: Type, value: Prim): Literal {
+  literal (type: Atom, value: Prim): Literal {
     return { type, rule: Rule.Literal, value };
   }
   unary (token: Lexeme): UnExpr {
     const [ type, init, operator ] = (token.literal === Op.NEG)
-      ? [ Type.NUM, 0, Op.MINUS ]
-      : [ Type.BOOL, false, Op.EQ ];
+      // negation 
+      ? [ Atom.NUM, 0, Op.MINUS ]
+      : [ Atom.BOOL, false, Op.EQ ];
     this.next();
     return {
       type: Kind.Unary,

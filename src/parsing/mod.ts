@@ -1,4 +1,4 @@
-export { Kind, Rule, stringify } from "./expression.ts";
+export { Kind, Rule } from "./expression.ts";
 export type {
   Prim,
   Assign,
@@ -13,6 +13,7 @@ export type {
   Name,
   UnExpr,
   Variable,
+  Vector
 } from "./expression.ts";
 
 export { Parser, parse } from "./parser.ts";

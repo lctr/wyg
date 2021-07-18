@@ -1,243 +1,104 @@
-import { Type, Op } from "../lexing/mod.ts";
 import type { Prim } from "../lexing/mod.ts";
-import { Kind } from "../parsing/mod.ts";
-import type {
-  Assign,
-  BinExpr,
-  Block,
-  Call,
-  Conditional,
-  Lambda,
-  // Literal,
-  UnExpr,
-  Variable,
-  Expr,
-} from "../parsing/mod.ts";
 
-export type WygArgs = WygValue | (() => WygValue);
-
-export type Fn = (..._: WygArgs[]) => WygValue;
+export type Fn = (...args: any[]) => any;
 
 // TODO: define Value type for accessing scoped values
-export type WygValue = Prim | Fn | any;
+export type WygValue = Prim
+  | Fn
+  | WygValue[]
+  | { (): WygValue; }
+  | { (_?: Fn | WygValue): WygValue; };
 
 export interface Args<T> extends Record<string, T> {
   [ t: string ]: T;
 }
 
-export type Key<T> = T extends Prim ? string : string;
+type Key<T> = T extends Prim ? string : string;
 
 export interface Context {
   args?: Args<WygValue>;
-  parent?: Envr;
+  parent?: Scope;
 }
 
 // when we enter a lambda/function, we introduce closures by creating a new scope environment `Envr` with its prototype set to that of its parent environment and evaluating said function's body in the new scope environment `Envr` instance.
-export class Envr implements Context {
+export class Scope implements Context {
   static interrupted: boolean;
-  static message: string | Error;
-  static set error (msg: string | Error) {
-    this.interrupted = true;
-    this.message = msg;
-  }
+  static message: Error;
+
   args: Args<WygValue>;
-  parent?: Envr;
+  parent?: Scope;
   /**
    * Instantiates an `Envr` object corresponding to a level of scope. If the constructor is provided with a parent object to inherit from
    */
   constructor ();
-  constructor (parent: Envr);
-  constructor (parent?: Envr) {
+  constructor (parent: Scope);
+  constructor (parent?: Scope) {
     this.args = Object.create(parent ? parent.args : null);
     this.parent = parent;
   }
-  get ctx () {
-    return this;
+  get snapshot (): string {
+    return Object.entries(this.args)
+      .reduce((s, [ k, t ]) => ` ${ s.length
+        + (typeof t).length > 77
+        ? s + '\n  '
+        : s + '' } ${ k }::${ typeof t },`,
+        '(Scope)> \n').trim();
   }
-  get snapshot () {
-    return "(ENV)> " + Deno.inspect(this, { depth: 5 });
-  }
+
   // TODO: communicate with parser/lexer to report location
   error (msg: string) {
     throw new EvalError(`${ msg }\n${ this.snapshot }`);
   }
   extend () {
-    return new Envr(this);
+    return new Scope(this);
   }
   // look up bindings along prototype chain
   lookup (name: number | string) {
-    let scope: (Envr | undefined) = this.ctx;
+    // deno-lint-ignore no-this-alias
+    let scope: (Scope | undefined) = this;
     while (scope) {
       // if the current scope's prototype has the binding as a property, we've found it
+      // this with the evalLambda evaluator function creates closures
       if (Object.prototype.hasOwnProperty.call(scope.args, name + '')) {
         return scope;
       }
+
       // otherwise, we go into the parent scope and try again
       scope = scope.parent;
     }
   }
-  get (name: number | string): WygValue {
+  get<T> (name: T) {
     if (name in this.args) {
-      return this.args[ name + '' ];
+      return this.args[ `${ name }` ];
     }
-    this.error("Cannot get undefined variable " + name);
+    this.error(`Cannot set undefined variable « ${ name } »`);
     return false;
   }
   // restricting assignment
-  // TODO: narrow down assignment not only to \subset current scope, but also to specifically mutable structures
-  set<E> (name: Key<E>, value: WygValue) {
-    const scope = this.lookup(name);
+  // TODO: implement constants
+  set<E> (name: E, value: WygValue): WygValue {
+    const scope = this.lookup(`${ name }`);
     if (!scope && this.parent) {
-      this.error("Cannot set undefined variable " + name);
+      this.error(`Cannot set undefined variable « ${ name } »`);
     }
-
-    return (scope ?? this).args[ name ] = value;
+    return (scope ?? this).args[ `${ name }` ] = value;
   }
   def (name: string, value: WygValue) {
     return this.args[ name ] = value;
   }
-}
-
-export type MetaChar = typeof Type.KW
-  | typeof Type.OP
-  | typeof Type.PUNCT
-  | typeof Type.EOF;
-export type Valued = Exclude<Type, MetaChar>;
-
-type Morpheme<T> = T extends Valued ? (string | number | boolean) : Kind;
-
-export function evaluate (expr: Expr, env: Envr): WygValue {
-  switch (expr.type) {
-    case Type.NUM:
-    case Type.STR:
-    case Type.BOOL:
-      return expr.value;
-    case Type.SYM:
-      return env.get(expr.value as string);
-    case Kind.Assign:
-      return evalAssign(expr as Assign, env);
-    case Kind.Unary:
-    case Kind.Binary:
-      return evalBinary(expr as BinExpr<Expr, Expr>, env);
-    case Kind.Lambda:
-      return evalLambda(expr as Lambda, env);
-    case Kind.Condition:
-      return evalConditional(expr as Conditional, env);
-    case Kind.Block:
-      return evalBlock(expr as Block, env);
-    case Kind.Call:
-      return evalCall(expr as Call, env);
-    case Kind.Variable:
-      return evalVariable(expr as Variable, env);
-    default:
-      throw new Error("Unable to evaluate " + JSON.stringify(expr, null, 2));
-  }
-}
-
-function evalConditional (expr: Conditional, env: Envr) {
-  if (evaluate(expr.cond, env) !== false) {
-    return evaluate(expr.then, env);
-  }
-  return expr.else ? evaluate(expr.else, env) : false;
-}
-
-function evalVariable (expr: Variable, env: Envr) {
-  let scope: Envr = env;
-  for (const arg of expr.args) {
-    scope = Object.assign(scope, env.extend());
-    scope.def(arg.name, arg.def ? evaluate(arg.def, env) : false);
-    // console.log("evalVariable: scope ", scope);
-  }
-  return evaluate(expr.body, scope);
-}
-
-function evalAssign (expr: Assign, env: Envr) {
-  if (expr.left.type != Type.SYM) {
-    throw new TypeError(
-      "Cannot assign to the non-variable " + JSON.stringify(expr.left, null, 2),
-    );
-  }
-  return env.set(expr.left.value, evaluate(expr.right, env));
-}
-
-function evalBlock (expr: Block, env: Envr) {
-  let result: WygValue = false;
-  for (const arg of expr.body) {
-    result = evaluate(arg, env);
-  }
-  return result;
-}
-function evalCall (expr: Call, env: Envr) {
-  const fn: WygValue = <Fn> evaluate(expr.fn, env);
-  return fn.apply(null, expr.args.map((arg) => evaluate(arg, env), fn));
-}
-
-function evalLambda (expr: Lambda, env: Envr): WygValue {
-  function lambda () {
-    const names = expr.args;
-    const scope = env.extend();
-    for (let i = 0; i < names.length; ++i) {
-      scope.def(names[ i ], i < arguments.length ? arguments[ i ] : false);
+  // mostly for debugging, but potentially for CPS or related
+  // 
+  static get stackmax () {
+    let i = 0;
+    const inc = () => {
+      ++i;
+      inc();
+    };
+    try {
+      inc();
+    } catch {
+      return i;
     }
-    return evaluate(expr.body, scope);
-  }
-  lambda.toString = () => `${ expr.name ? expr.name : 'Lambda' } { arity: ${ expr.args.length } }`;
-  if (expr.name) {
-    env = env.extend();
-    env.def(expr.name, lambda);
-  }
-  return lambda;
-}
-
-function evalBinary (expr: BinExpr<Expr, Expr> | UnExpr, env: Envr): WygValue {
-  return evalBinaryOp(
-    expr.operator,
-    <Prim> evaluate(expr.left, env),
-    <Prim> evaluate(expr.right, env),
-  );
-}
-
-export function evalBinaryOp (op: string, a: Prim, b: Prim) {
-  switch (op) {
-    case Op.PLUS:
-      return _n(a) + _n(b);
-    case Op.MINUS:
-      return _n(a) - _n(b);
-    case Op.TIMES:
-      return _n(a) * _n(b);
-    case Op.DIV:
-      return _n(a) / _d(<number> b);
-    case Op.MOD:
-      return _n(a) % _d(<number> b);
-    case Op.AND:
-      return a !== false && b;
-    case Op.OR:
-      return a !== false ? a : b;
-    case Op.LT:
-      return _n(a) < _n(b);
-    case Op.GT:
-      return _n(a) > _n(b);
-    case Op.LEQ:
-      return _n(a) <= _n(b);
-    case Op.GEQ:
-      return _n(a) >= _n(b);
-    case Op.EQ:
-      return a === b;
-    case Op.NEQ:
-      return a !== b;
-    default:
-      throw new Error("Unable to recognize operator " + op);
-  }
-  function _n<K> (x: K) {
-    if (typeof x != "number") {
-      throw new TypeError("Expected a number, but got " + x);
-    }
-    else return x;
-  }
-  function _d<K> (x: K) {
-    if (_n(x) === 0) {
-      throw new EvalError("Trying to divide by zero!");
-    }
-    else return x as K;
+    return i;
   }
 }
