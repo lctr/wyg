@@ -8,7 +8,7 @@ import type {
   Conditional,
   Lambda,
   Literal,
-  UnExpr,
+  // UnExpr,
   Variable,
   Vector,
   Expr,
@@ -16,20 +16,8 @@ import type {
 import { Scope } from "./environment.ts";
 import type { WygValue, Fn } from "./environment.ts";
 
-export type MetaChar = typeof Atom.KW
-  | typeof Atom.OP
-  | typeof Atom.PUNCT
-  | typeof Atom.EOF;
-export type Valued = Exclude<Atom, MetaChar>;
-
-function isLiteral (expr: Expr): expr is Literal {
-  return expr.type === Atom.BOOL || expr.type === Atom.NUM || expr.type === Atom.STR;
-}
-
-// function isSymbol
 
 export function evaluate (expr: Expr, env: Scope): WygValue {
-  if (isLiteral(expr)) return expr.value;
   switch (expr.type) {
     case Atom.NUM:
     case Atom.STR:
@@ -39,6 +27,7 @@ export function evaluate (expr: Expr, env: Scope): WygValue {
       return env.get((expr as Literal).value as string);
     case Kind.Assign:
       return evalAssign(expr as Assign, env);
+    // unary operators have presets atm, so no special evaluation needed
     case Kind.Unary:
     case Kind.Binary:
       return evalBinary(expr as BinExpr<Expr, Expr>, env);
@@ -127,6 +116,8 @@ function evalBinary (
   );
 }
 
+// TODO: process types prior to evaluating binary operators, such as for
+// infix array/list operators 
 function evalOp ({ operator }: BinExpr<Expr, Expr>) {
 
 }
@@ -176,6 +167,7 @@ export function evalBinaryOp (op: string, a: WygValue, b: WygValue) {
   }
 }
 
+// TODO: encapsulate computation in its own monoid
 class Computation {
   #num () {
 
