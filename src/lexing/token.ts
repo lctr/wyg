@@ -19,6 +19,7 @@ export enum Comment {
 // string enums for operators since they pop up across (lexer,) parser and evaluator
 export enum Op {
   DEF = "=", ASSIGN = "<-",
+  CONC = "<>",
   OR = "||",
   AND = "&&",
   EQ = "==", NEQ = "!=",
@@ -31,10 +32,10 @@ export enum Op {
 
 
 export enum Kw {
-  LET = "let", IF = "if", THEN = "then", ELSE = "else", TRUE = "true", FALSE = "false", WITH = "with", IN = "in", OF = "of"
+  LET = "let", IF = "if", THEN = "then", ELSE = "else", TRUE = "true", FALSE = "false", FN = "fn", AT = "at", WITH = "with", IN = "in", OF = "of"
 }
 
-export const KW = [ "let", "if", "then", "else", "true", "false", "with", "in", "of",
+export const KW = [ "let", "if", "then", "else", "true", "false", "at", "with", "in", "of", "fn",
   // type names  
   "Number", "String", "Closure", "List", "Tuple" ];
 
