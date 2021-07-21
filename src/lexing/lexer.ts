@@ -1,7 +1,7 @@
 import { Stream, Streamable } from "./stream.ts";
 export type { Streamable } from "./stream.ts";
 import { Comment, KW, Prim, Token, Atom } from "./token.ts";
-export { Token, Atom, Op, Kw } from "./token.ts";
+export { Token, Atom, Op } from "./token.ts";
 export type { Lexeme, Prim } from "./token.ts";
 
 export class Lexer implements Streamable<Token> {
@@ -74,15 +74,37 @@ export class Lexer implements Streamable<Token> {
   // TODO: add support for bases 2, 8, 16
   #number () {
     let infixed = false;
+    let float = false;
+    let digit = isDigit;
     const number: string = this.#eatWhile((c) => {
       if (c == ".") {
         if (infixed) return false;
         infixed = true;
         return true;
       }
-      return isDigit(c);
+      if (isIntBase(c)) {
+        if (infixed) return false;
+        infixed = true;
+        switch (c) {
+          case 'b': digit = isBin; break;
+          case 'o': digit = isOct; break;
+          case 'x': digit = isHex; break;
+        }
+        return true;
+      }
+      if (c == "e") {
+        if (infixed) return false;
+        infixed = true;
+        float = true;
+        return true;
+      }
+      if ("+-".includes(c)) {
+        if (!float && infixed) return false;
+        return true;
+      }
+      return digit(c);
     });
-    return this.#tokenize(Atom.NUM, /box/i.test(number) ? parseInt(number) : parseFloat(number), number);
+    return this.#tokenize(Atom.NUM, float ? parseFloat(number) : parseInt(number), number);
   }
   #string () {
     const string = this.#escaped('"');
@@ -152,7 +174,7 @@ function isDigit (char: string) {
   return /[0-9]/i.test(char);
 }
 function isOperator (char: string) {
-  return "=&|<>!+-*/^%".indexOf(char) > -1;
+  return "=&|<>!+-*/^%".includes(char);
 }
 function startsWord (char: string) {
   return /[\p{L}_]/ui.test(char);
@@ -161,13 +183,22 @@ function isWord (word: string) {
   return startsWord(word) || /[\p{L}\d']/ui.test(word);
 }
 function isPunct (char: string) {
-  return ",;()[]{}|#".indexOf(char) > -1;
+  return ",:;()[]{}|#".includes(char);
 }
 function isComment (left: string, right: string) {
   return " ~~ ~* ".indexOf(" " + left + right + " ") > -1;
 }
 function isHex (char: string) {
   return /[0-9a-f]/i.test(char);
+}
+function isBin (char: string) {
+  return "01".includes(char);
+}
+function isOct (char: string) {
+  return "01234567".includes(char);
+}
+function isIntBase (char: string) {
+  return "box".includes(char);
 }
 
 // export default { Type, Token, Lexer };
