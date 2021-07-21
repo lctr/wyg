@@ -6,6 +6,7 @@ import type {
   Block,
   Call,
   Conditional,
+  Index,
   Lambda,
   Literal,
   // UnExpr,
@@ -43,9 +44,19 @@ export function evaluate (expr: Expr, env: Scope): WygValue {
       return evalVariable(expr as Variable, env);
     case Kind.Vector:
       return evalVector(expr as Vector, env);
+    case Kind.Index:
+      return evalIndex(expr as Index, env);
     default:
       throw new Error("Unable to evaluate " + JSON.stringify(expr, null, 2));
   }
+}
+
+function evalIndex (expr: Index, env: Scope) {
+  const idx = evaluate(expr.idx, env);
+  if (typeof idx !== "number") {
+    throw new TypeError(`Only numbers may be used as indices for vectors/lists, however ${ idx } was provided`);
+  }
+  return evaluate(expr.body.body[ idx ], env);
 }
 
 function evalVector (expr: Vector, env: Scope) {

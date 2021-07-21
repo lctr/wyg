@@ -4,6 +4,7 @@ export { Atom } from "../lexing/token.ts";
 export type { Prim, Lexeme } from "../lexing/token.ts";
 
 // TODO: change to non-string enums, using mapped enums for external representation
+
 export enum Kind {
   Block = "block",
   Condition = "condition",
@@ -14,8 +15,10 @@ export enum Kind {
   Assign = "assign",
   Binary = "binary",
   Unary = "unary",
-  Literal = "literal"
+  Literal = "literal",
+  Index = "index"
 }
+
 
 export enum Rule {
   Or,
@@ -33,6 +36,7 @@ export enum Rule {
   Lambda,
   Vector,
   Assign,
+  Index
 }
 
 /**
@@ -107,8 +111,11 @@ export interface Conditional extends ExprNode {
 
 export interface Vector extends ExprNode {
   body: Expr[];
-  head: Expr,
-  tail: Expr[],
+}
+
+export interface Index extends ExprNode {
+  body: Vector,
+  idx: Expr,
 }
 
 export interface List extends Vector {
@@ -118,6 +125,7 @@ export interface List extends Vector {
 export type Expr =
   | Block
   | Vector
+  | Index
   | Conditional
   | Lambda
   | Variable
