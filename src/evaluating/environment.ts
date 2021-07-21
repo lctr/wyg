@@ -13,8 +13,6 @@ export interface Args<T> extends Record<string, T> {
   [ t: string ]: T;
 }
 
-type Key<T> = T extends Prim ? string : string;
-
 export interface Context {
   args?: Args<WygValue>;
   parent?: Scope;
@@ -57,13 +55,9 @@ export class Scope implements Context {
     // deno-lint-ignore no-this-alias
     let scope: (Scope | undefined) = this;
     while (scope) {
-      // if the current scope's prototype has the binding as a property, we've found it
-      // this with the evalLambda evaluator function creates closures
       if (Object.prototype.hasOwnProperty.call(scope.args, name + '')) {
         return scope;
       }
-
-      // otherwise, we go into the parent scope and try again
       scope = scope.parent;
     }
   }
@@ -71,7 +65,7 @@ export class Scope implements Context {
     if (name in this.args) {
       return this.args[ `${ name }` ];
     }
-    this.error(`Cannot set undefined variable « ${ name } »`);
+    this.error(`Cannot get undefined variable '${ name }'`);
     return false;
   }
   // restricting assignment
@@ -79,7 +73,7 @@ export class Scope implements Context {
   set<E> (name: E, value: WygValue): WygValue {
     const scope = this.lookup(`${ name }`);
     if (!scope && this.parent) {
-      this.error(`Cannot set undefined variable « ${ name } »`);
+      this.error(`Cannot set undefined variable '${ name }'`);
     }
     return (scope ?? this).args[ `${ name }` ] = value;
   }
