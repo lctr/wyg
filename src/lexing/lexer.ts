@@ -75,6 +75,7 @@ export class Lexer implements Streamable<Token> {
   #number () {
     let infixed = false;
     let float = false;
+    let base;
     let digit = isDigit;
     const number: string = this.#eatWhile((c) => {
       if (c == ".") {
@@ -86,9 +87,9 @@ export class Lexer implements Streamable<Token> {
         if (infixed) return false;
         infixed = true;
         switch (c) {
-          case 'b': digit = isBin; break;
-          case 'o': digit = isOct; break;
-          case 'x': digit = isHex; break;
+          case 'b': digit = isBin; base = 2; break;
+          case 'o': digit = isOct; base = 8; break;
+          case 'x': digit = isHex; base = 16; break;
         }
         return true;
       }
@@ -104,7 +105,17 @@ export class Lexer implements Streamable<Token> {
       }
       return digit(c);
     });
-    return this.#tokenize(Atom.NUM, float ? parseFloat(number) : parseInt(number), number);
+
+    return this.#tokenize(Atom.NUM, base ? this.#integer(number, base) : parseFloat(number), number);
+  }
+  #integer (num: string, base: number) {
+    if (/^0[box]/.test(num.slice(0, 2)))
+      return parseInt(num.slice(2), base);
+    else {
+      this.error(`Unable to parse integer '${ num }' with base '${ base }'`);
+      return false;
+    }
+
   }
   #string () {
     const string = this.#escaped('"');
