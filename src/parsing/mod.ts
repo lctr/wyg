@@ -8,6 +8,7 @@ export type {
   Call,
   Conditional,
   Expr,
+  Index,
   Lambda,
   Literal,
   Name,
