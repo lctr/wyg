@@ -103,6 +103,10 @@ function evalLambda (expr: Lambda, env: Scope): WygValue {
     env = env.extend();
     env.def(expr.name, lambda);
   }
+  lambda.toString = function () {
+    return `Lambda ${ expr.name ? expr.name : '_' } { ${ expr.args.reduce((a, n, i) => `${ a }${ i }: ${ n }, `, '')
+      }}`;
+  };
   return lambda;
 }
 
