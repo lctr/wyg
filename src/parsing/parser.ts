@@ -170,7 +170,7 @@ export class Parser extends Lexer implements Streamable<Lexeme> {
     }
     return { name, def };
   }
-  lambda (): Lambda {
+  lambda (): Lambda | Call {
 
     let token = this.peek();
     const name = token.typeIs(Atom.SYM) ? token.literal : null;
@@ -205,10 +205,23 @@ export class Parser extends Lexer implements Streamable<Lexeme> {
     } else {
       body = this.expression();
     }
-    return { type: Kind.Lambda, rule: Rule.Lambda, name, args, body };
+    if (this.peek().validate(Atom.KW, "at")) {
+      this.eat("at");
+      return this.call({
+        type: Kind.Lambda,
+        rule: Rule.Lambda,
+        name, args, body
+      });
+    }
+    return {
+      type: Kind.Lambda,
+      rule: Rule.Lambda,
+      name, args, body
+    };
   }
   parameter () {
-
+    const name = this.peek().literal;
+    return name;
   }
   block (): Block | Expr {
     const body = this.circumscribed("{", ";", "}", this.expression);
@@ -250,13 +263,17 @@ export class Parser extends Lexer implements Streamable<Lexeme> {
         return this.unary(token);
       }
       if (token.validate(Atom.PUNCT, "{")) {
-        return this.block();;
+        return this.block();
       }
       if (token.validate(Atom.KW, "if")) {
         return this.conditional();
       }
       if (token.validate(Atom.KW, "let")) {
         return this.variable();
+      }
+      if (token.validate(Atom.KW, "fn")) {
+        this.eat("fn");
+        return this.lambda();
       }
       if (token.validate(Atom.PUNCT, '|')) {
         return this.lambda();
