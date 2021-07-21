@@ -116,10 +116,29 @@ function evalBinary (
   );
 }
 
-// TODO: process types prior to evaluating binary operators, such as for
-// infix array/list operators 
-function evalOp ({ operator }: BinExpr<Expr, Expr>) {
+function evalConc (a: WygValue, b: WygValue) {
+  if (typeof a == 'string' && typeof b == 'string') {
+    return `${ a + b }`;
+  } else if (Array.isArray(a) && Array.isArray(b)) {
+    return [ ...a, ...b ];
+  } else if (Array.isArray(a) && !Array.isArray(b)) {
+    return [ ...a, b ];
+  } else if (!Array.isArray(a) && Array.isArray(b)) {
+    return [ a, ...b ];
+  } else if (!Array.isArray(a) && !Array.isArray(b)) {
+    return [ a, b ];
+  } else {
+    throw new Error("Unable to handle arguments '" + a + "' and '" + b + "' for concat operator '<> '");
+  }
+}
 
+function evalEq (a: WygValue, b: WygValue): boolean {
+  if (typeof a !== typeof b) return false;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    else return a.every((x, i) => evalEq(x, b[ i ]));
+  }
+  return a === b;
 }
 
 export function evalBinaryOp (op: string, a: WygValue, b: WygValue) {
@@ -147,9 +166,11 @@ export function evalBinaryOp (op: string, a: WygValue, b: WygValue) {
     case Op.GEQ:
       return _n(a) >= _n(b);
     case Op.EQ:
-      return a === b;
+      return evalEq(a, b);
     case Op.NEQ:
-      return a !== b;
+      return !evalEq(a, b);
+    case Op.CONC:
+      return evalConc(a, b);
     default:
       throw new Error("Unable to recognize operator " + op);
   }
@@ -166,6 +187,8 @@ export function evalBinaryOp (op: string, a: WygValue, b: WygValue) {
     else return x as K;
   }
 }
+
+
 
 // TODO: encapsulate computation in its own monoid
 class Computation {
