@@ -113,9 +113,8 @@ export class Lexer implements Streamable<Token> {
       return parseInt(num.slice(2), base);
     else {
       this.error(`Unable to parse integer '${ num }' with base '${ base }'`);
-      return false;
+      return 0;
     }
-
   }
   #string () {
     const string = this.#escaped('"');
