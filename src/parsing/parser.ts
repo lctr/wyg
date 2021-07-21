@@ -317,7 +317,10 @@ export class Parser extends Lexer implements Streamable<Lexeme> {
     return this.binary(this.factor, Rule.Term, Op.PLUS, Op.MINUS);
   }
   factor (): Expr {
-    return this.binary(this.atom, Rule.Factor, Op.TIMES, Op.DIV, Op.MOD);
+    return this.binary(this.conc, Rule.Factor, Op.TIMES, Op.DIV, Op.MOD);
+  }
+  conc (): Expr {
+    return this.binary(this.atom, Rule.Factor, Op.CONC);
   }
   literal (type: Atom, value: Prim): Literal {
     return { type, rule: Rule.Literal, value };
