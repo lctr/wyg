@@ -1,6 +1,6 @@
 import { Stream, Streamable } from "./stream.ts";
 export type { Streamable } from "./stream.ts";
-import { Comment, KW, Prim, Token, Atom } from "./token.ts";
+import { Comment, Reserved, Prim, Token, Atom } from "./token.ts";
 export { Token, Atom, Op } from "./token.ts";
 export type { Lexeme, Prim } from "./token.ts";
 
@@ -175,7 +175,7 @@ export class Lexer implements Streamable<Token> {
 
 // pattern matching utils as functions instead of static methods
 function isKeyword (word: string) {
-  return KW.indexOf(word) > -1;
+  return Reserved.includes(word);
 }
 function isSpace (char: string) {
   return /\s/.test(char);
@@ -196,7 +196,7 @@ function isPunct (char: string) {
   return ",:;()[]{}|#".includes(char);
 }
 function isComment (left: string, right: string) {
-  return " ~~ ~* ".indexOf(" " + left + right + " ") > -1;
+  return " ~~ ~* ".includes(" " + left + right + " ");
 }
 function isHex (char: string) {
   return /[0-9a-f]/i.test(char);

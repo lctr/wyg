@@ -35,7 +35,7 @@ export enum Kw {
   LET = "let", IF = "if", THEN = "then", ELSE = "else", TRUE = "true", FALSE = "false", FN = "fn", AT = "at", WITH = "with", IN = "in", OF = "of"
 }
 
-export const KW = [ "let", "if", "then", "else", "true", "false", "at", "with", "in", "of", "fn",
+export const Reserved = [ "let", "if", "then", "else", "true", "false", "at", "with", "in", "of", "fn",
   // type names  
   "Number", "String", "Closure", "List", "Tuple" ];
 
@@ -103,4 +103,4 @@ export class Token implements Lexeme {
 }
 
 
-export default { Atom, Comment, Op, KW, Token };
+export default { Atom, Comment, Op, Reserved, Token };
