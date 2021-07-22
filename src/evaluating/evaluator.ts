@@ -202,12 +202,3 @@ export function evalBinaryOp (op: string, a: WygValue, b: WygValue) {
     else return x as K;
   }
 }
-
-
-
-// TODO: encapsulate computation in its own monoid
-class Computation {
-  #num () {
-
-  }
-}
