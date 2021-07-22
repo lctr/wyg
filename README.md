@@ -91,14 +91,14 @@ Certain items are premarked:
 - [x] Clean up module imports/exports
 - [ ] Unit tests
 - [x] Add variable bindings
-- [ ] Add support for binary, octal, hex, and decimal numbers
+- [x] Add support for binary, octal, hex, and decimal numbers
 - [x] Implement parsing + evaluating unary op expressions
 - [ ] **(!)** Implement arbitrary floating point precision
-- [ ] Add array and hash types
-- [ ] Implement array and hash literals
+- [x] Add list literals
+- [x] Implement cons, list operations
 - [x] **(!)** Syntactic sugar
 - [ ] **(?)** Static typing
 - [ ] Implement AST analyzer
-- [ ] Improve error handling
+- [x] **(!)** Improve error handling
 - [ ] Code generation
 - [ ] Standard library
