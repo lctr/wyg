@@ -1,14 +1,14 @@
 export interface Position {
   line: number;
   col: number;
-  pos?: number;
+  pos: number;
 }
 
 export interface Streamable<T> {
-  eof (): boolean,
-  peek (): T,
-  next (): T,
-  error (message: string): void,
+  eof(): boolean,
+  peek(): T,
+  next(): T,
+  error(message: string): void,
   after?(): T,
 }
 
@@ -16,7 +16,7 @@ export class Stream implements Streamable<string> {
   pos = 0;
   line = 1;
   col = 0;
-  #eol!: Position;
+  #eol: Position = { pos: this.pos, line: this.line, col: this.col };
   readonly end: number;
 
   constructor (private source: string) {
@@ -24,46 +24,51 @@ export class Stream implements Streamable<string> {
     this.source = source.replace(/(?:\r?\n)/g, "\n").normalize();
     this.end = this.source.length;
   }
-  peek () {
+  peek() {
     return this.source.charAt(this.pos);
   }
-  after () {
+  after() {
     return this.source.charAt(this.pos + 1);
   }
-  next () {
+  next() {
     const char = this.source.charAt(this.pos++);
     if (char == "\n") this.col = 0,
       this.line++,
-      this.#eol = { line: this.line, col: this.col };
+      this.#eol = { pos: this.pos, line: this.line, col: this.col };
     else this.col++;
     return char;
   }
-  eof () {
+  eof() {
     return this.peek() == "";
   }
-  get #row () {
-    return this.source.slice(this.pos - this.col, this.col);
+  get eol() {
+    return (({ pos, line, col }) => ({ pos, line, col }))(this);
   }
-  get #divider () {
-    return '-'.repeat(`${ this.line }`.length + this.col + 4);
+  set eol({ pos, line, col }: Position) {
+    this.#eol = { pos, line, col };
   }
-  get #indicator () {
-    return '^'.repeat(Math.max(1, this.pos - this.#row.trimRight().lastIndexOf(' ') - 1));
-  }
-  error (msg: string) {
+  error(msg: string) {
     // TODO: test for edge cases
-    const message = `${ msg } at (${ this.line }:${ this.col })`;
-    const snippet = '\n\n  ['
-      + this.line + '] · '
-      + this.#row + '\n  '
-      + this.#divider
-      + this.#indicator;
+    const pre = this.#eol, curr = this.eol;
+    const wNum = ({ line }: Position) => `${ line }`.length;
 
+    const pRow = this.source.slice(pre.pos - pre.col, pre.pos);
+    const cRow = this.source.slice(pre.pos, curr.pos);
+    const gutter = [ pre, curr ].map(x => `[${ x.line + ' '.repeat(wNum(curr) - wNum(x)) }] · `);
+    const divider = '-'.repeat(gutter[ 1 ].length - 2 + (curr.col > 0
+      ? curr.col : pre.col));
+    const indicator = '^'.repeat(((w) => w[ w.length - 1 ])(cRow.split(/\s/)).length || 1);
+    const message = `${ msg } at (${ curr.line }:${ curr.col })`;
+    let quoted = gutter[ 1 ] + cRow;
+    if (pre.line != curr.line) quoted = gutter[ 0 ] + pRow + "\n" + quoted;
+    const snippet = [
+      "\n",
+      quoted,
+      divider + indicator
+    ].join("\n");
     throw new Error(`${ message }${ snippet }`);
   }
-  // get line up to corrent position for logging
-  row () {
+  row() {
     return this.source.slice(this.pos - this.col, this.col);
   }
 }
-
