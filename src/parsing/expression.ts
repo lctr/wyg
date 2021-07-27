@@ -1,5 +1,5 @@
 import { Atom } from "../lexing/token.ts";
-import type { Prim, Lexeme } from "../lexing/token.ts";
+import type { Prim, Lexeme, Types } from "../lexing/token.ts";
 export { Atom } from "../lexing/token.ts";
 export type { Prim, Lexeme } from "../lexing/token.ts";
 
@@ -7,7 +7,7 @@ export type { Prim, Lexeme } from "../lexing/token.ts";
 
 export enum Kind {
   Block = "block",
-  Condition = "condition",
+  Conditional = "conditional",
   Vector = "vector",
   Variable = "variable",
   Lambda = "lambda",
@@ -16,7 +16,8 @@ export enum Kind {
   Binary = "binary",
   Unary = "unary",
   Literal = "literal",
-  Index = "index"
+  Index = "index",
+  Pipe = "pipe"
 }
 
 
@@ -32,49 +33,59 @@ export enum Rule {
   Block,
   Variable,
   Call,
-  Condition,
+  Conditional,
   Lambda,
   Vector,
   Assign,
-  Index
+  Index,
+  Pipe
 }
 
 /**
  * Every Expression node 
  */
 export interface ExprBase {
-  type: Atom | Kind;
+  type: Atom | Kind | string;
 }
 
 export interface ExprNode extends ExprBase {
   rule: Rule;
 }
 
-export interface BinExpr<L, R> extends ExprNode {
+export interface Binary<L, R> extends ExprNode {
   operator: string,
   left: L,
   right: R,
 }
 
-export interface UnExpr extends ExprNode {
+export interface Unary extends ExprNode {
   type: Kind.Unary,
   operator: string,
-  left: Literal,
+  left: Literal<Prim>,
   right: Expr,
 }
 
-export interface Literal extends ExprNode {
-  value: Prim,
+export interface Literal<T> extends ExprNode {
+  value: T, //Prim,
 }
 
 export interface Lambda extends ExprNode {
   name?: string | null,
-  args: string[],
+  args: Parameter[],
   body: Expr,
-  arity?: number;
 }
 
-export interface Binding {
+export interface Arguments {
+  def: Expr,
+  type: string | null,
+}
+
+export interface Parameter {
+  name: string,
+  type?: string | null,
+}
+
+export interface Binding extends Parameter {
   name: string,
   def: Expr,
 }
@@ -83,14 +94,17 @@ export interface Name extends ExprBase {
   value: string,
 }
 
+
 export interface Variable extends ExprNode {
   args: Binding[],
   body: Expr,
 }
 
+
 export interface Call extends ExprNode {
   fn: Expr,
-  args: Expr[],
+  args: Expr[] | Arguments[],
+  typed?: boolean,
 }
 
 export interface Assign extends ExprNode {
@@ -109,12 +123,15 @@ export interface Conditional extends ExprNode {
   else?: Expr;
 }
 
+/**
+ * An expression containing a collection of expressions. Unlike Blocks, a Vector does not resolve to an atomic value, but rather holds (possibly by iteration) a collection of values.
+ */
 export interface Vector extends ExprNode {
   body: Expr[];
 }
 
-export interface Index extends ExprNode {
-  body: Vector,
+export interface Index<T> extends ExprNode {
+  body: T,
   idx: Expr,
 }
 
@@ -122,17 +139,25 @@ export interface List extends Vector {
   pred: Expr[],
 }
 
+export interface Pipe extends ExprNode {
+  fns: Expr[],
+  arg: Expr,
+}
+
+
 export type Expr =
   | Block
   | Vector
-  | Index
+  | Index<Expr | Expr[] | Prim[]>
+  | Pipe
   | Conditional
   | Lambda
   | Variable
   | Call
   | Assign
-  | BinExpr<Expr, Expr>
-  | UnExpr
-  | Literal
+  | Binary<Expr, Expr>
+  | Unary
+  | Literal<Prim>
   | Lexeme
+  | Arguments
   | Name;

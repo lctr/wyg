@@ -3,6 +3,7 @@ import { Lexer, Atom, Op } from "../lexing/mod.ts";
 
 import { Kind, Rule } from "./expression.ts";
 import type {
+  Arguments,
   Assign,
   Binding,
   Binary,
@@ -13,6 +14,7 @@ import type {
   Index,
   Lambda,
   Literal,
+  Parameter,
   Pipe,
   Prim,
   Unary,
@@ -133,16 +135,16 @@ export class Parser extends Lexer implements Streamable<Lexeme> {
     else if (current.literal === literal) this.eat(literal);
   }
   variable(): Call | Variable {
-    const skipIn = () => {
-      if (this.peek().validate(Atom.KW, "in"))
-        this.eat("in");
-    };
     this.eat("let");
-    if (this.peek().typeIs(Atom.SYM)) {
+    if (this.peek().typeIs(Atom.REF)) {
       const name = this.next().literal;
-      const [ names, defs ]: [ string[], Expr[] ] = [ [], [] ];
-      this.circumscribed("(", ",", ")", this.binding).forEach(({ name, def }) => { names.push(name); defs.push(def ?? super.false); });
-      skipIn();
+      const [ inner, outer ]: [ Parameter[], Arguments[] ] = [ [], [] ];
+      const bindings = this.circumscribed("(", ",", ")", this.binding);
+      bindings.forEach(({ name, def, type }) => {
+        inner.push({ name, type });
+        outer.push({ def: def ?? super.false, type: type ?? '' });
+      });
+      this.skip("in");
       const body = this.expression();
       return {
         type: Kind.Call,
@@ -151,14 +153,14 @@ export class Parser extends Lexer implements Streamable<Lexeme> {
           type: Kind.Lambda,
           rule: Rule.Lambda,
           name,
-          args: names,
+          args: inner,
           body,
         },
-        args: defs,
+        args: outer,
       };
     }
     const args = this.circumscribed("(", ",", ")", this.binding);
-    skipIn();
+    this.skip("in");
     const body = this.expression();
     return {
       type: Kind.Variable,
@@ -169,42 +171,43 @@ export class Parser extends Lexer implements Streamable<Lexeme> {
   }
   binding(): Binding {
     const name = this.peek().literal;
-    let def!: Expr;
+    let def!: Expr, type!: string;
     this.next();
-    if (this.peek().validate(Atom.OP, Op.DEF)) {
+    if (this.peek().typeIs(Atom.META)) {
+      type = this.peek().literal;
+      this.next();
+    }
+    if (this.peek().is(Op.DEF)) {
       this.next();
       def = this.expression();
     }
-    return { name, def };
+    return { name, def, type };
   }
-  lambda(): Lambda | Call {
+  lambda(): Lambda {
 
     let token = this.peek();
-    const name = token.typeIs(Atom.SYM) ? token.literal : null;
+    const name = token.typeIs(Atom.REF) ? token.literal : null;
     if (name) this.next();
+    const args = this.circumscribed('|', ',', '|', this.parameter);
+    // this.eat("|");
+    // token = this.peek();
+    // const args: Parameter[] = [];
+    // while (token.literal !== "|") {
+    //   if (token.validate(Atom.PUNCT, ',')) {
+    //     this.eat(',');
+    //     break;
+    //   }
+    //   else if (!token.typeIs(Atom.REF)) {
+    //     this.error("Lambda parameters must be unbound symbols!");
+    //   }
 
-    this.eat("|");
-    token = this.peek();
-    const args: string[] = [];
-    while (token.literal !== "|") {
-      if (token.validate(Atom.PUNCT, ',')) {
-        this.eat(',');
-        break;
-      }
-      if (token.typeIs(Atom.KW)) {
-        this.error("Lambda parameters may not be keywords!");
-      }
-      else if (!token.typeIs(Atom.SYM)) {
-        this.error("Lambda parameters must be unbound symbols!");
-      }
-      args.push(token.literal);
-      this.next();
-      if (this.peek().validate(Atom.PUNCT, ",")) {
-        this.eat(",");
-      }
-      token = this.peek();
-    }
-    this.eat("|");
+    //   args.push(this.parameter(token));
+    //   if (this.peek().validate(Atom.PUNCT, ",")) {
+    //     this.eat(",");
+    //   }
+    //   token = this.peek();
+    // }
+    // this.eat("|");
     let body: Expr;
     token = this.peek();
     if (token.validate(Atom.OP, "{")) {
@@ -220,7 +223,18 @@ export class Parser extends Lexer implements Streamable<Lexeme> {
   }
   parameter() {
     const name = this.peek().literal;
-    return name;
+    let type;
+    this.next();
+    if (this.peek().is(":")) {
+      this.next();
+      if (this.peek().typeIs(Atom.META)) {
+        type = this.peek().literal;
+        this.next();
+      } else {
+        this.error("Expected a type for this type annotation, but instead got " + this.peek().literal);
+      }
+    }
+    return { name, type };
   }
   block(): Block | Expr {
     const body = this.circumscribed("{", ";", "}", this.expression);
@@ -272,6 +286,7 @@ export class Parser extends Lexer implements Streamable<Lexeme> {
       }
       if (token.validate(Atom.KW, "fn")) {
         this.eat("fn");
+        this.skip(":");
         return this.lambda();
       }
       if (token.validate(Atom.PUNCT, '|')) {
@@ -286,20 +301,18 @@ export class Parser extends Lexer implements Streamable<Lexeme> {
         return this.indexish(this.vector);
         // return this.vector();
       }
-      if (token.typeIn(Atom.SYM, Atom.STR)) {
+      if (token.typeIn(Atom.REF, Atom.STR)) {
         this.next();
         return this.indexish(() => token);
       }
-      if (token.typeIn(Atom.BOOL, Atom.NUM)) {
+      if (token.typeIn(Atom.BOOL, Atom.NUM, Atom.SYM)) {
         this.next();
         return token;
       }
       if (this.eof()) {
         throw this.error('Unexpected end of input!');
       }
-      throw this.error(
-        "Unable to parse " + JSON.stringify(token.toJSON(), null, 2),
-      );
+      throw this.error(`Unable to parse ${ token.toString() }`);
     });
   }
   assign(): Assign | Expr {

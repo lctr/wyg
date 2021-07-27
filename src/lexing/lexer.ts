@@ -1,6 +1,6 @@
 import { Stream, Streamable } from "./stream.ts";
 export type { Streamable } from "./stream.ts";
-import { Comment, Reserved, Prim, Token, Atom } from "./token.ts";
+import { Comment, Reserved, Prim, Token, Atom, Types, OpChars, Puncts, Bases, Octals, PreComment } from "./token.ts";
 export { Token, Atom, Op } from "./token.ts";
 export type { Lexeme, Prim } from "./token.ts";
 
@@ -8,30 +8,31 @@ export class Lexer implements Streamable<Token> {
   stream: Stream;
   #current: Token | null = null;
   constructor (source: string | Stream) {
-    this.stream = (source instanceof Stream) ? source : new Stream(source);
+    this.stream = (source instanceof Stream)
+      ? source : new Stream(source);
   }
-  get false () {
-    return this.#tokenize(Atom.BOOL, false, "<FALSE>");
+  get false() {
+    return this.#tokenize(Atom.BOOL, false, "\u2205");
   }
   // state methods
-  error (message: string) {
+  error(message: string) {
     this.stream.error(message);
   }
-  peek () {
+  peek() {
     return this.#current ?? (this.#current = this.after());
   }
-  next () {
+  next() {
     const token = this.#current;
     this.#current = null;
     return token ?? this.after();
   }
-  eof () {
+  eof() {
     return this.peek().type === Atom.EOF;
   }
-  pos () {
+  pos() {
     return { line: this.stream.line, col: this.stream.col };
   }
-  after (): Token {
+  after(): Token {
     this.#eatWhile(isSpace);
 
     if (this.stream.eof()) return this.#tokenize(Atom.EOF, "\\0");
@@ -52,12 +53,17 @@ export class Lexer implements Streamable<Token> {
       case startsWord(char):
         return this.#word();
 
+      case char == '@':
+        return this.#special();
+
+      case char == ':':
+        if (this.stream.after() == ":") return this.#operator();
+        else return this.#punct();
       case isPunct(char):
-        if (char == "|" && this.stream.after() == "|") {
+        // whitespace important for distinguishing `|` from `||`
+        if (char == '|' && isOperator(this.stream.after()))
           return this.#operator();
-        } else {
-          return this.#punct();
-        }
+        else return this.#punct();
 
       case isOperator(char):
         return this.#operator();
@@ -67,12 +73,12 @@ export class Lexer implements Streamable<Token> {
     }
   }
 
-  #tokenize (type: Atom, value: Prim, literal?: string) {
+  #tokenize(type: Atom, value: Prim, literal?: string) {
     return new Token(type, value, this.pos(), literal);
   }
 
   // TODO: add support for bases 2, 8, 16
-  #number () {
+  #number() {
     let infixed = false;
     let float = false;
     let base;
@@ -83,7 +89,7 @@ export class Lexer implements Streamable<Token> {
         infixed = true;
         return true;
       }
-      if (isIntBase(c)) {
+      if (isBase(c)) {
         if (infixed) return false;
         infixed = true;
         switch (c) {
@@ -99,7 +105,7 @@ export class Lexer implements Streamable<Token> {
         float = true;
         return true;
       }
-      if ("+-".includes(c)) {
+      if (c == "+" || c == "-") {
         if (!float && infixed) return false;
         return true;
       }
@@ -108,7 +114,7 @@ export class Lexer implements Streamable<Token> {
 
     return this.#tokenize(Atom.NUM, base ? this.#integer(number, base) : parseFloat(number), number);
   }
-  #integer (num: string, base: number) {
+  #integer(num: string, base: number) {
     if (/^0[box]/.test(num.slice(0, 2)))
       return parseInt(num.slice(2), base);
     else {
@@ -116,15 +122,18 @@ export class Lexer implements Streamable<Token> {
       return 0;
     }
   }
-  #string () {
+  #string() {
     const string = this.#escaped('"');
     return this.#tokenize(Atom.STR, string);
   }
-  #word () {
+  #word() {
     const word = this.#eatWhile(isWord);
-    return this.#tokenize(isKeyword(word) ? Atom.KW : Atom.SYM, word);
+    return this.#tokenize(isKeyword(word) ? Atom.KW : isMeta(word) ? Atom.META : Atom.REF, word);
   }
-  #comment () {
+  #special() {
+    return this.#tokenize(Atom.SYM, this.#eatWhile(isSpecial));
+  }
+  #comment() {
     if (this.stream.after() == Comment.TILDE) {
       this.#eatWhile((c) => c != "\n");
     } else {
@@ -139,21 +148,22 @@ export class Lexer implements Streamable<Token> {
     }
     this.stream.next();
   }
-  #punct () {
+  #punct() {
     return this.#tokenize(Atom.PUNCT, this.stream.next());
   }
-  #operator () {
-    return this.#tokenize(Atom.OP, this.#eatWhile(isOperator));
+  #operator() {
+    const punctOp = this.#eatWhile(isOperator);
+    return this.#tokenize(Atom.OP, punctOp);
   }
 
-  // modulating consumption of tokens
-  #escaped (terminal: string) {
+  #escaped(terminal: string) {
     let escaped = false, match = "";
     this.stream.next();
     while (!this.stream.eof()) {
       const c = this.stream.next();
       if (escaped) {
-        match += c, escaped = false;
+        match += c;
+        escaped = false;
       } else if (c == "\\") {
         escaped = true;
       } else if (c == terminal) {
@@ -164,7 +174,7 @@ export class Lexer implements Streamable<Token> {
     }
     return match;
   }
-  #eatWhile (charPred: (ch: string) => boolean) {
+  #eatWhile(charPred: (ch: string) => boolean) {
     let word = "";
     while (!this.stream.eof() && charPred(this.stream.peek())) {
       word += this.stream.next();
@@ -174,41 +184,46 @@ export class Lexer implements Streamable<Token> {
 }
 
 // pattern matching utils as functions instead of static methods
-function isKeyword (word: string) {
-  return Reserved.includes(word);
+function isKeyword(word: string) {
+  return Reserved.has(word);
 }
-function isSpace (char: string) {
+function isMeta(word: string) {
+  return Types.has(word);
+}
+function isSpace(char: string) {
   return /\s/.test(char);
 }
-function isDigit (char: string) {
+function isDigit(char: string) {
   return /[0-9]/i.test(char);
 }
-function isOperator (char: string) {
-  return "=&|<>!+-*/^%".includes(char);
+function isOperator(char: string) {
+  return OpChars.has(char);
 }
-function startsWord (char: string) {
+function isSpecial(word: string) {
+  return word.charAt(0) == "@" || isWord(word);
+}
+function startsWord(char: string) {
   return /[\p{L}_]/ui.test(char);
 }
-function isWord (word: string) {
+function isWord(word: string) {
   return startsWord(word) || /[\p{L}\d']/ui.test(word);
 }
-function isPunct (char: string) {
-  return ",:;()[]{}|#".includes(char);
+function isPunct(char: string) {
+  return Puncts.has(char);
 }
-function isComment (left: string, right: string) {
-  return " ~~ ~* ".includes(" " + left + right + " ");
+function isComment(left: string, right: string) {
+  return PreComment.has(left + right);
 }
-function isHex (char: string) {
+function isHex(char: string) {
   return /[0-9a-f]/i.test(char);
 }
-function isBin (char: string) {
-  return "01".includes(char);
+function isBin(char: string) {
+  return char == "0" || char == "1";
 }
-function isOct (char: string) {
-  return "01234567".includes(char);
+function isOct(char: string) {
+  return Octals.has(char);
 }
-function isIntBase (char: string) {
-  return "box".includes(char);
+function isBase(char: string) {
+  return Bases.has(char);
 }
 
-// export default { Type, Token, Lexer };
