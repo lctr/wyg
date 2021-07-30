@@ -3,7 +3,7 @@ import { assertEquals } from "../deps.ts";
 
 Deno.test({
   name: "wildcard _ is SYM",
-  fn () {
+  fn() {
     const token = new Lexer('_').next();
     assertEquals(token.type, Atom.SYM);
   }
@@ -11,14 +11,14 @@ Deno.test({
 
 Deno.test({
   name: "single-word string",
-  fn () {
+  fn() {
     const token = new Lexer(`"cars"`).next();
     assertEquals(token.type, Atom.STR);
   }
 });
 
 Deno.test({
-  name: "multi-word string", fn () {
+  name: "multi-word string", fn() {
     const token = new Lexer(`"these are some cars"`).next();
     assertEquals(token.type, Atom.STR);
   }
@@ -26,14 +26,14 @@ Deno.test({
 
 Deno.test({
   name: "decimal",
-  fn () {
+  fn() {
     const token = new Lexer('3.14').next();
     assertEquals(token.value, 3.14);
   }
 });
 
 Deno.test({
-  name: "float", fn () {
+  name: "float", fn() {
     const token = new Lexer('12e3').next();
     assertEquals(token.value, 12e3);
   }
@@ -80,7 +80,7 @@ Deno.test({
 
 Deno.test({
   name: "lambda parameters",
-  fn () {
+  fn() {
     const lexer = new Lexer(`|a, b|`);
     const expected = [ Atom.PUNCT, Atom.SYM, Atom.PUNCT, Atom.SYM, Atom.PUNCT ];
     const tokens = expected.map(() => lexer.next().type);
@@ -88,9 +88,15 @@ Deno.test({
   }
 });
 
+Deno.test("multichar operators", () => {
+  const lexer = new Lexer(`|| |>`);
+  const expected = [ Atom.OP, Atom.OP ];
+  assertEquals(expected.map(() => lexer.next().type), expected);
+});
+
 Deno.test({
   name: "single vertical bar is PUNCT",
-  fn () {
+  fn() {
     const token = new Lexer("|").next();
     assertEquals(token, Atom.PUNCT);
   }
@@ -98,9 +104,30 @@ Deno.test({
 
 Deno.test({
   name: "double vertical bars is OP",
-  fn () {
+  fn() {
     const token = new Lexer("||").next();
-    assertEquals(token, Atom.OP);
+    assertEquals(token.type, Atom.OP);
   }
 });
 
+Deno.test({
+  name: "string: unicode",
+  fn() {
+    const char = `"\\u2207"`;
+    const token = new Lexer(char).next();
+    console.log(token);
+    assertEquals(token.value, char);
+  }
+});
+
+Deno.test({
+  name: "string: tab",
+  fn() {
+    const char = "\"a\nb\"";
+    const token = new Lexer(char).next();
+    console.log('char:', char);
+    console.log('val:', token.value);
+    console.log('literal:', token.literal);
+    assertEquals(token.value, char);
+  }
+});

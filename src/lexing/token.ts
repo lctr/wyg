@@ -1,12 +1,14 @@
 // lexeme kinds, used by lexer, parser, and interpreter
 export enum Atom {
-  KW = "KW",
-  BOOL = "BOOL",
-  STR = "STR",
-  NUM = "NUM",
-  SYM = "SYM",
-  OP = "OP",
-  PUNCT = "PUNCT",
+  KW = "Keyword",
+  META = "Meta",
+  BOOL = "Bool",
+  STR = "String",
+  NUM = "Number",
+  REF = "Reference",
+  SYM = "Symbol",
+  OP = "Operator",
+  PUNCT = "Punctuation",
   EOF = "EOF",
 }
 
@@ -18,8 +20,9 @@ export enum Comment {
 
 // string enums for operators since they pop up across (lexer,) parser and evaluator
 export enum Op {
-  DEF = "=", ASSIGN = "<-",
-  CONC = "<>",
+  DEF = "=", ASSIGN = "=", // changing this to something else ASSIGN = "<-",
+  TYPE = "::", RET = "->",
+  CONC = "<>", PIPE = "|>",
   OR = "||",
   AND = "&&",
   EQ = "==", NEQ = "!=",
@@ -30,16 +33,27 @@ export enum Op {
   NEG = "-", NOT = "!"
 }
 
-
 export enum Kw {
-  LET = "let", IF = "if", THEN = "then", ELSE = "else", TRUE = "true", FALSE = "false", FN = "fn", AT = "at", WITH = "with", IN = "in", OF = "of"
+  LET = "let", IF = "if", THEN = "then", ELSE = "else", TRUE = "true", FALSE = "false", FN = "fn", AT = "at", WITH = "with", IN = "in", OF = "of", IS = "is"
 }
 
-export const Reserved = [ "let", "if", "then", "else", "true", "false", "at", "with", "in", "of", "fn",
-  // type names  
-  "Number", "String", "Closure", "List", "Tuple" ];
+export const Reserved = new Set([
+  "let", "if", "then", "else", "true", "false", "at", "with", "in", "of", "fn", "is"
+]);
 
-export type Prim = string | number | boolean;
+export const Types = new Set([ "No", "Int", "Num", "Str", "Bool", "Vec", "Fn", "Box" ]);
+
+export const OpChars = new Set([ ...":=&|<>!+-*/^%" ]);
+
+export const Puncts = new Set([ ...",:;()[]{}|" ]);
+
+export const Bases = new Set([ ..."box" ]);
+
+export const Octals = new Set([ ..."01234567" ]);
+
+export const PreComment = new Set([ "~~", "~*" ]);
+
+export type Prim = string | number | boolean | symbol;
 
 export interface Position {
   line: number;
@@ -61,32 +75,38 @@ export class Token implements Lexeme {
     public position: Position,
     literal?: string,
   ) {
-    this.literal = !literal ? `${ value }` : literal;
-    if (this.validate(Atom.KW, "true", "false")) {
+    this.literal = typeof literal != 'string' ? value.toString() : literal;
+    if (this.match(Atom.KW, "true", "false")) {
       this.type = Atom.BOOL;
       this.value = value as string === "true";
     }
+    Object.freeze(this);
   }
-  get end () {
+  get end() {
     return this.position.col + this.literal.length;
   }
-  typeIs (t: string | Atom) {
+  typeIs(t: Atom & string) {
     return (this.type === t);
   }
-  typeIn (...types: Atom[]) {
+  typeIn(...types: (Atom & string)[]) {
     for (const t of types)
       if (this.type === t)
         return true;
     return false;
   }
-  is (literal: string) {
+  is(literal: string) {
     for (const val of literal)
       if (val === this.literal)
         return true;
     return false;
   }
-  validate (...literal: string[]): boolean;
-  validate (type: Atom, ...literal: string[]): boolean {
+  /**
+   * Match token value against one or more string literals
+   * @param literal The string value(s) to be tested against in order.
+   */
+  match(...literal: string[]): boolean;
+  match(type: Atom, ...literal: string[]): boolean;
+  match(type: Atom, ...literal: string[]): boolean {
     if (!type) for (const val of literal)
       if (val === this.literal)
         return true;
@@ -97,10 +117,13 @@ export class Token implements Lexeme {
         return true;
     return false;
   }
-  toJSON () {
-    return `${ this.type } \`${ this.literal }\` @ (${ this.position.line }:${ this.position.col }`;
+  toString(includePos?: boolean) {
+    return `${ this.type }::[ ${ this.literal } ]`
+      + (includePos
+        ? `(${ this.position.line }:${ this.position.col })`
+        : '');
   }
 }
 
 
-export default { Atom, Comment, Op, Reserved, Token };
+// export default 
