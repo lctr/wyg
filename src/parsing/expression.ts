@@ -6,22 +6,24 @@ export type { Prim, Lexeme } from "../lexing/token.ts";
 // TODO: change to non-string enums, using mapped enums for external representation
 
 export enum Kind {
-  Block = "block",
-  Conditional = "conditional",
-  Vector = "vector",
-  Variable = "variable",
-  Lambda = "lambda",
-  Call = "call",
-  Assign = "assign",
-  Binary = "binary",
-  Unary = "unary",
-  Literal = "literal",
-  Index = "index",
-  Pipe = "pipe"
+  Block = "Block",
+  Conditional = "Conditional",
+  Vector = "Vector",
+  Tuple = "Tuple",
+  Variable = "Variable",
+  Lambda = "Lambda",
+  Call = "Call",
+  Assign = "Assign",
+  Binary = "Binary",
+  Unary = "Unary",
+  Literal = "Literal",
+  Index = "Index",
+  Pipe = "Pipe"
 }
 
 
 export enum Rule {
+  Index,
   Or,
   And,
   Equality,
@@ -37,7 +39,7 @@ export enum Rule {
   Lambda,
   Vector,
   Assign,
-  Index,
+  Tuple,
   Pipe
 }
 
@@ -45,17 +47,21 @@ export enum Rule {
  * Every Expression node 
  */
 export interface ExprBase {
-  type: Atom | Kind | string;
+  type: Atom | Kind,
 }
 
 export interface ExprNode extends ExprBase {
-  rule: Rule;
+  rule: Rule,
 }
 
 export interface Binary<L, R> extends ExprNode {
   operator: string,
   left: L,
   right: R,
+}
+
+export function isBinary(node: Expr): node is Binary<Expr, Expr> {
+  return node.type === Kind.Binary;
 }
 
 export interface Unary extends ExprNode {
@@ -65,19 +71,36 @@ export interface Unary extends ExprNode {
   right: Expr,
 }
 
+export function isUnary(node: Expr): node is Unary {
+  return node.type === Kind.Unary;
+}
+
 export interface Literal<T> extends ExprNode {
   value: T, //Prim,
 }
 
+export function isLiteral(node: Expr): node is Literal<Prim> {
+  return node && 'value' in node && node.type === Kind.Literal;
+}
+
 export interface Lambda extends ExprNode {
-  name?: string | null,
   args: Parameter[],
   body: Expr,
+  name?: string | null,
+  sign?: string[],
+}
+
+// export interface Signature extends Binary<Lexeme |> {
+
+// }
+
+export function isLambda(node: Expr): node is Lambda {
+  return node.type === Kind.Lambda;
 }
 
 export interface Arguments {
   def: Expr,
-  type: string | null,
+  type?: string | null,
 }
 
 export interface Parameter {
@@ -100,11 +123,18 @@ export interface Variable extends ExprNode {
   body: Expr,
 }
 
+export function isVariable(node: Expr): node is Variable {
+  return node.type === Kind.Variable;
+}
 
-export interface Call extends ExprNode {
+export interface Call<T extends (Arguments | Expr)> extends ExprNode {
   fn: Expr,
-  args: Expr[] | Arguments[],
+  args: T[],
   typed?: boolean,
+}
+
+export function isCall<T extends Expr>(node: Expr): node is Call<T> {
+  return node.type === Kind.Call;
 }
 
 export interface Assign extends ExprNode {
@@ -113,14 +143,26 @@ export interface Assign extends ExprNode {
   right: Expr,
 }
 
+export function isAssign(node: Expr): node is Assign {
+  return node.type === Kind.Assign;
+}
+
 export interface Block extends ExprNode {
   body: Expr[],
+}
+
+export function isBlock(node: Expr): node is Block {
+  return node.type === Kind.Block;
 }
 
 export interface Conditional extends ExprNode {
   cond: Expr;
   then: Expr;
   else?: Expr;
+}
+
+export function isConditional(node: Expr): node is Conditional {
+  return node.type === Kind.Conditional;
 }
 
 /**
@@ -130,20 +172,32 @@ export interface Vector extends ExprNode {
   body: Expr[];
 }
 
+export function isVector(node: Expr): node is Vector {
+  return node.type === Kind.Vector;
+}
+
 export interface Index<T> extends ExprNode {
   body: T,
   idx: Expr,
 }
 
-export interface List extends Vector {
-  pred: Expr[],
+export function isIndex<T extends Expr>(node: Expr): node is Index<T> {
+  return node.type === Kind.Index;
+}
+
+export interface Tuple<T> extends ExprNode {
+  parts: T[];
+}
+
+export interface Cons<S, T> extends ExprNode {
+  head: S,
+  tail: T | Cons<S, T>,
 }
 
 export interface Pipe extends ExprNode {
   fns: Expr[],
   arg: Expr,
 }
-
 
 export type Expr =
   | Block
@@ -153,7 +207,7 @@ export type Expr =
   | Conditional
   | Lambda
   | Variable
-  | Call
+  | Call<Binding | Arguments | Expr>
   | Assign
   | Binary<Expr, Expr>
   | Unary
