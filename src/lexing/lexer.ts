@@ -128,7 +128,11 @@ export class Lexer implements Streamable<Token> {
   }
   #word() {
     const word = this.#eatWhile(isWord);
-    return this.#tokenize(isKeyword(word) ? Atom.KW : isMeta(word) ? Atom.META : Atom.REF, word);
+    return this.#tokenize(isKeyword(word)
+      ? Atom.KW
+      : isMeta(word)
+        ? Atom.META
+        : Atom.REF, word);
   }
   #special() {
     return this.#tokenize(Atom.SYM, this.#eatWhile(isSpecial));
